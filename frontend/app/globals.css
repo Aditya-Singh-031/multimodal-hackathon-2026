@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #070a12;
+  --panel: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.09);
+  --fg: #e8ecf6;
+  --muted: #8b95b0;
+  --low: #34d399;
+  --moderate: #fbbf24;
+  --high: #fb923c;
+  --very_high: #f43f5e;
+  --accent: #7c5cff;
+  --accent2: #22d3ee;
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --font-sans: var(--font-outfit);
+  --font-mono: var(--font-geist-mono);
+}
+
+html { color-scheme: dark; }
+
+body {
+  background:
+    radial-gradient(900px 500px at 10% -10%, rgba(124, 92, 255, 0.22), transparent 60%),
+    radial-gradient(800px 500px at 100% 0%, rgba(34, 211, 238, 0.14), transparent 60%),
+    radial-gradient(700px 500px at 50% 120%, rgba(244, 63, 94, 0.12), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--fg);
+  font-family: var(--font-outfit), system-ui, sans-serif;
+}
+
+.glass {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-radius: 20px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.glass-hover { transition: transform 0.25s ease, border-color 0.25s ease; }
+.glass-hover:hover { transform: translateY(-2px); border-color: rgba(124, 92, 255, 0.5); }
+
+.gradient-text {
+  background: linear-gradient(90deg, #a78bfa, #22d3ee);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.1), rgba(255,255,255,0.04));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 12px;
+}
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(124, 92, 255, 0.5); }
+  100% { box-shadow: 0 0 0 14px rgba(124, 92, 255, 0); }
+}
+.pulse-ring { animation: pulse-ring 1.8s infinite; }
+
+input[type="range"] { accent-color: var(--accent); }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 8px; }

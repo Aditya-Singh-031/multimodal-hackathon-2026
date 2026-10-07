@@ -5,4 +5,11 @@ __pycache__/
 .env.local
 dist/
 build/
+.next/
 .DS_Store
+backend/.venv/
+backend/models/
+frontend/shots/
+data/synthetic/ecg/
+data/raw/ptbxl/
+.pytest_cache/

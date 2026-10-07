@@ -11,10 +11,10 @@ export const metadata: Metadata = {
     "Explainable cardiovascular risk prediction fusing clinical data, ECG signals and clinical notes, with a what-if simulator and 3D heart visualization.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${outfit.variable} ${mono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" suppressHydrationWarning className={`${outfit.variable} ${mono.variable} h-full antialiased`}>
+      <body suppressHydrationWarning className="min-h-full flex flex-col">{children}</body>
     </html>
   );
 }

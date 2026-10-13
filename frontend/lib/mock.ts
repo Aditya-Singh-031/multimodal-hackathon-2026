@@ -24,7 +24,7 @@ function ecg(hr: number, abn: number, seconds = 6): number[] {
 }
 
 const mk = (id: string, name: string, f: Features, abn: number, vessels: string[], profile: string, notes: string): Patient => ({
-  id, name, label: null, vessels, profile,
+  id, name, label: null, vessels, profile, features: f,
   request: { patient_id: id, features: f, ecg: { signal: ecg(f.resting_hr, abn), sampling_rate: FS }, notes },
 });
 

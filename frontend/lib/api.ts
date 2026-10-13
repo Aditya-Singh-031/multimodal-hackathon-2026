@@ -22,7 +22,8 @@ export async function getPatients(): Promise<{ data: Patient[]; offline: boolean
   try {
     const data = await http<Patient[]>("/api/patients", undefined, 5000);
     if (!data.length) throw new Error("empty");
-    return { data, offline: false };
+    const normalized = data.map((p) => ({ ...p, features: p.features ?? p.request.features }));
+    return { data: normalized, offline: false };
   } catch {
     return { data: MOCK_PATIENTS, offline: true };
   }

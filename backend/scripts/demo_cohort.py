@@ -33,7 +33,7 @@ SPECS = [
      0.25, [], "Occasional atypical chest discomfort. Type 2 diabetes on metformin. Hypertensive, prescribed amlodipine."),
     ("Kabir Singh", "high", dict(age=54, sex="M", systolic_bp=148, cholesterol=240, smoker=True, diabetic=False, bmi=28.5, resting_hr=78, chest_pain_type=2, exercise_angina=False),
      0.35, ["LAD"], "Patient reports exertional chest tightness radiating to the left arm. Provoked by climbing stairs. Current smoker, approx 18 pack-years. Angiography: 70% LAD stenosis."),
-    ("Priya Sharma", "high", dict(age=64, sex="F", systolic_bp=155, cholesterol=250, smoker=True, diabetic=True, bmi=30.0, resting_hr=80, chest_pain_type=2, exercise_angina=False),
+    ("Priya Sharma", "critical", dict(age=64, sex="F", systolic_bp=155, cholesterol=250, smoker=True, diabetic=True, bmi=30.0, resting_hr=80, chest_pain_type=2, exercise_angina=False),
      0.35, ["RCA"], "Patient reports exertional chest tightness radiating to the jaw. Provoked by exercise. Type 2 diabetes on metformin. Current smoker. Angiography: 75% mid-RCA stenosis."),
     ("Vikram Rao", "critical", dict(age=72, sex="M", systolic_bp=172, cholesterol=275, smoker=True, diabetic=True, bmi=32.0, resting_hr=90, chest_pain_type=3, exercise_angina=True),
      0.85, ["LAD", "RCA", "LCx"], "Patient reports exertional chest tightness radiating to the left arm. Provoked by minimal exertion. Current smoker, approx 28 pack-years. Type 2 diabetes. Father had MI at age 51. Angiography: severe 3-vessel disease."),

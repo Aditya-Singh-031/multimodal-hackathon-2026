@@ -22,9 +22,32 @@ export interface Patient {
   id: string;
   name: string;
   request: PredictRequest;
+  features?: Features;
   label?: number | null;
   vessels?: string[];
+  /** Optional quantified stenosis (%) per vessel, e.g. { LAD: 70 }. Overrides narrative parsing. */
+  vessel_stenosis?: Partial<Record<VesselId, number>>;
   profile?: string;
+}
+
+export type VesselId = "LAD" | "LCx" | "RCA" | "LM";
+export type VesselStatus = "patent" | "mild" | "critical";
+export interface VesselAssessment {
+  id: VesselId;
+  name: string;
+  territory: string;
+  wall: string;
+  leads: string[];
+  /** Diameter stenosis, 0–99 %. */
+  stenosis: number;
+  status: VesselStatus;
+  source: "angiography" | "clinical-note" | "model";
+  /** Estimated fractional flow reserve proxy (0.2–1.0). */
+  ffr: number;
+  /** Estimated hyperemic flow reduction, %. */
+  flowReduction: number;
+  /** Approximate share of LV myocardium supplied, %. */
+  myocardiumAtRisk: number;
 }
 export interface Shap { feature: string; value: number; contribution: number }
 export interface EcgFindings {

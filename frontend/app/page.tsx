@@ -114,7 +114,7 @@ export default function Home() {
             </Card>
 
             <Card title="3D cardiac model" icon={HeartPulse} id="card-heart">
-              <Heart3D color={color} bpm={pred.ecg_findings?.heart_rate ?? f.resting_hr} risk={pred.risk} vessels={sel.vessels} />
+              <Heart3D patient={sel} prediction={pred} color={color} />
               <div className="grid grid-cols-3 gap-2 mt-3 text-center text-xs">
                 {[["BP", `${f.systolic_bp}`], ["Chol", `${f.cholesterol}`], ["BMI", `${f.bmi}`]].map(([k, v]) => (
                   <div key={k} className="rounded-lg bg-white/5 py-2"><div className="text-[var(--muted)]">{k}</div><div className="font-semibold text-sm">{v}</div></div>

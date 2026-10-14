@@ -81,24 +81,30 @@ npm run dev        # Visit http://localhost:3000
 
 ---
 
-## Model Benchmarks & Metrics
+## Model Benchmarks & Metrics (Track A Req 1d & 1e)
 
 Evaluated via **5-fold Stratified Cross-Validation with 3 repeats** on the real UCI Cleveland Heart Disease dataset (out-of-fold predictions):
 
-| Target | ROC-AUC | PR-AUC | Prevalence | Brier Score |
-|---|---|---|---|---|
-| **cad_status (Overall CAD)** | **0.9585** | **0.9613** | 45.9% | **0.0775** |
-| **lad_stenosis (LAD $\ge$ 50%)** | **0.8733** | **0.6795** | 27.1% | **0.1164** |
-| **rca_stenosis (RCA $\ge$ 50%)** | **0.8607** | **0.5710** | 24.4% | **0.1341** |
-| **lcx_stenosis (LCx $\ge$ 50%)** | **0.7264** | **0.3444** | 16.2% | **0.1246** |
+| Target Objective | Accuracy | Precision | Recall | F1-Score | ROC-AUC | PR-AUC | Brier Score | Zero Leakage Status |
+|---|---|---|---|---|---|---|---|---|
+| **cad_status (Overall CAD)** | **88.8%** | **92.5%** | **82.3%** | **0.8705** | **0.9585** | **0.9613** | **0.0775** | ✓ Verified Excluded |
+| **lad_stenosis (LAD $\ge$ 50%)** | **84.7%** | **73.6%** | **67.9%** | **0.7061** | **0.8733** | **0.6795** | **0.1164** | ✓ Verified Excluded |
+| **rca_stenosis (RCA $\ge$ 50%)** | **79.9%** | **60.8%** | **49.6%** | **0.5459** | **0.8607** | **0.5710** | **0.1341** | ✓ Verified Excluded |
+| **lcx_stenosis (LCx $\ge$ 50%)** | **83.7%** | **47.2%** | **3.4%** | **0.0634** | **0.7264** | **0.3444** | **0.1246** | ✓ Verified Excluded |
 
 *See full evaluation results in [docs/metrics.json](docs/metrics.json).*
+
+### Strict Zero Target Leakage Prevention (Req 1d)
+- **Code Enforcement**: `assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(FEATURES)` is asserted at module load, prior to training, and before inference in `app/services/tabular.py` and `scripts/train_tabular.py`.
+- **Forbidden Predictors**: `{"LAD", "LCX", "RCA", "LM", "Cath", "cad_status", "target", "lad_stenosis", "lcx_stenosis", "rca_stenosis"}` are strictly prohibited from model feature sets and input schemas.
+- **Narrative Cleaning**: Demo cohort patient notes (`demo_cohort.py` and `mock.ts`) strictly contain non-invasive clinical history, symptom timelines, and echocardiographic findings — catheterization and angiography labels are completely excluded.
+- **Automated Test Guard**: `backend/tests/test_api.py::test_no_target_leakage_in_features` validates that forbidden targets are excluded from schema fields and feature vectors.
 
 ---
 
 ## Verification & Testing
 ```powershell
-# Run backend test suite (8 test cases, strict feature boundary & API contracts)
+# Run backend test suite (9 test cases, zero target leakage verification & API contracts)
 .\backend\.venv\Scripts\python.exe -m pytest backend/tests -q
 
 # Run frontend production build
@@ -107,5 +113,6 @@ cd frontend; npm run build
 
 ---
 
-## Limitations
-This software is a research prototype for decision-support and spatial medical visualization developed for the Multimodal AI Hackathon 2026. **It is not an FDA-cleared medical device and should not be used as a standalone diagnostic tool.**
+## Clinical Safety Disclaimer (Track A Requirement 5)
+
+> ⚠️ **CLINICAL SAFETY DISCLAIMER**: Predictions and 3D visualizations are for clinical decision support and educational purposes only and are NOT a substitute for formal diagnostic imaging (such as coronary angiography or cardiac CT) or professional medical diagnosis.

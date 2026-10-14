@@ -34,6 +34,7 @@ from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
     brier_score_loss,
+    f1_score,
     precision_score,
     recall_score,
     roc_auc_score,
@@ -44,8 +45,21 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app.config import settings  # noqa: E402
-from app.services.tabular import FEATURES, LABELS, _ART, build_artifact, fit_targets, new_calibrated  # noqa: E402,F401
+from app.services.tabular import (  # noqa: E402
+    _ART,
+    FEATURES,
+    FORBIDDEN_LEAKAGE_FEATURES,
+    LABELS,
+    build_artifact,
+    fit_targets,
+    new_calibrated,
+)
 from app.services.vessel_labels import TARGETS, derive_vessel_labels, severity_to_vessel_count  # noqa: E402
+
+# Requirement 1d: Assert strict target leakage prevention prior to evaluation/training
+assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(FEATURES), (
+    f"Target leakage in FEATURES: {FORBIDDEN_LEAKAGE_FEATURES & set(FEATURES)}"
+)
 
 RNG_SEED = 42
 CV_FOLDS = 5
@@ -112,18 +126,22 @@ def load_and_map_uci(csv_path: Path) -> tuple[pd.DataFrame, pd.Series, pd.Series
 def _scores(y: np.ndarray, p: np.ndarray) -> dict:
     pred = (p >= 0.5).astype(int)
     return {
-        "roc_auc": float(roc_auc_score(y, p)),
-        "pr_auc": float(average_precision_score(y, p)),
+        "accuracy": float(accuracy_score(y, pred)),
         "precision": float(precision_score(y, pred, zero_division=0)),
         "recall": float(recall_score(y, pred, zero_division=0)),
-        "accuracy": float(accuracy_score(y, pred)),
+        "f1": float(f1_score(y, pred, zero_division=0)),
+        "roc_auc": float(roc_auc_score(y, p)),
+        "pr_auc": float(average_precision_score(y, p)),
         "brier_score": float(brier_score_loss(y, p)),
     }
 
 
 def evaluate_cv(X: pd.DataFrame, labels: dict[str, np.ndarray]) -> dict[str, dict]:
     """Repeated stratified K-fold; every target uses identical folds. Reports mean (and std) over repeats of the
-    out-of-fold ROC-AUC / PR-AUC, so the numbers are not a single lucky split."""
+    out-of-fold metrics, so the numbers are not a single lucky split."""
+    assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(X.columns), (
+        f"Target leakage in CV features: {FORBIDDEN_LEAKAGE_FEATURES & set(X.columns)}"
+    )
     y_strat = labels["cad_status"]
     per_repeat: dict[str, list[dict]] = {n: [] for n in TARGETS}
     for rep in range(CV_REPEATS):
@@ -142,6 +160,7 @@ def evaluate_cv(X: pd.DataFrame, labels: dict[str, np.ndarray]) -> dict[str, dic
         m = {k: round(float(np.mean([r[k] for r in runs])), 4) for k in runs[0]}
         m["roc_auc_std"] = round(float(np.std([r["roc_auc"] for r in runs])), 4)
         m["pr_auc_std"] = round(float(np.std([r["pr_auc"] for r in runs])), 4)
+        m["f1_std"] = round(float(np.std([r["f1"] for r in runs])), 4)
         y = labels[n]
         m.update(n_samples=int(len(y)), n_positive=int(y.sum()), prevalence=round(float(y.mean()), 4))
         out[n] = m
@@ -150,14 +169,17 @@ def evaluate_cv(X: pd.DataFrame, labels: dict[str, np.ndarray]) -> dict[str, dic
 
 def print_metrics(title: str, metrics: dict[str, dict]) -> None:
     print(f"=== {title} ===")
-    print(f"  {'target':<14}{'ROC-AUC':>10}{'PR-AUC':>9}{'prev.':>8}{'Brier':>8}")
+    print(f"  {'target':<14}{'Accuracy':>10}{'Precision':>10}{'Recall':>9}{'F1-Score':>10}{'ROC-AUC':>10}{'PR-AUC':>9}")
     for n, m in metrics.items():
-        print(f"  {n:<14}{m['roc_auc']:>10.4f}{m['pr_auc']:>9.4f}{m['prevalence']:>8.3f}{m['brier_score']:>8.4f}")
+        print(f"  {n:<14}{m['accuracy']:>10.4f}{m['precision']:>10.4f}{m['recall']:>9.4f}{m['f1']:>10.4f}{m['roc_auc']:>10.4f}{m['pr_auc']:>9.4f}")
 
 
 def train_and_save(X: pd.DataFrame, labels: dict[str, np.ndarray], dataset_name: str, provenance: str,
                    metrics: dict[str, dict]) -> dict:
     """Fit the final multi-target model on the entire dataset and save the artifact."""
+    assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(X.columns), (
+        f"Target leakage in training features: {FORBIDDEN_LEAKAGE_FEATURES & set(X.columns)}"
+    )
     targets = fit_targets(X, labels, RNG_SEED)
     artifact = build_artifact(targets, metrics, dataset_name, provenance, datetime.now(timezone.utc).isoformat())
     settings.model_dir.mkdir(parents=True, exist_ok=True)

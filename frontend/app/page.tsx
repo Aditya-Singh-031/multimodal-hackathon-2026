@@ -219,6 +219,19 @@ export default function Home() {
         </div>
       </header>
 
+      {/* Track A Requirement 5: Prominent Clinical Safety Disclaimer (Top) */}
+      <div
+        id="clinical-safety-disclaimer-top"
+        role="note"
+        className="mb-5 rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/70 via-slate-900/90 to-amber-950/60 p-3.5 sm:p-4 shadow-lg backdrop-blur-md flex items-center gap-3.5 text-amber-200/95 text-xs sm:text-[13px] leading-relaxed"
+      >
+        <span className="text-amber-400 font-bold text-lg shrink-0">⚠️</span>
+        <div className="flex-1">
+          <strong className="font-bold text-amber-300 uppercase tracking-wide">CLINICAL SAFETY DISCLAIMER:</strong>{" "}
+          Predictions and 3D visualizations are for clinical decision support and educational purposes only and are NOT a substitute for formal diagnostic imaging (such as coronary angiography or cardiac CT) or professional medical diagnosis.
+        </div>
+      </div>
+
       {/* Context Hero Callout (Track A Opening Mission Context) */}
       <div className="mb-6 rounded-2xl border border-white/10 bg-gradient-to-r from-indigo-950/70 via-purple-950/40 to-slate-950/80 p-4 sm:p-5 shadow-xl backdrop-blur-md flex items-center gap-4">
         <span className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 shrink-0 shadow-inner">
@@ -461,7 +474,7 @@ export default function Home() {
 
               {/* Panel 2: Multi-Target SHAP Attributions */}
               <Card title={isPatient ? "Why Your Health Score Was Calculated" : "Explainability · Multi-Target SHAP"} icon={Sparkles} id="card-shap">
-                <ShapChart shap={activePred.shap} />
+                <ShapChart shap={activePred.shap} features={f} />
               </Card>
 
               {/* Panel 3: Interactive Clinical Notes NLP & Live Extractor */}
@@ -552,11 +565,168 @@ export default function Home() {
                 </div>
               </Card>
             </div>
+
+            {/* -----------------------------------------------------------------------
+                4. MODEL EVALUATION & LEAKAGE AUDIT (Track A Req 1d & 1e)
+                ----------------------------------------------------------------------- */}
+            <div className="lg:col-span-12">
+              <Card
+                title="Model Evaluation & Leakage Audit (Track A Req 1d & 1e)"
+                icon={CheckCircle2}
+                id="card-model-evaluation"
+              >
+                <div className="space-y-4">
+                  {/* Top bar with protocol info and Zero Target Leakage badge */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/[0.08]">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold text-white/90">
+                        Protocol: 5-Fold Stratified Cross-Validation × 3 Repeats (Out-of-Fold Evaluation on Real UCI Cleveland Data)
+                      </span>
+                      <span className="text-[11px] text-[var(--muted)]">N=303 Patients · Platt-Calibrated XGBoost</span>
+                    </div>
+
+                    {/* Green Zero Target Leakage Badge */}
+                    <div
+                      id="zero-leakage-badge"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-bold shadow-[0_0_12px_rgba(52,211,153,0.2)]"
+                    >
+                      <CheckCircle2 size={13} className="text-emerald-400" />
+                      <span>✓ Zero Target Leakage Verified (LAD, LCX, RCA, Cath Excluded from Inputs)</span>
+                    </div>
+                  </div>
+
+                  {/* 5-Fold CV Metrics Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs" id="table-evaluation-metrics">
+                      <thead>
+                        <tr className="border-b border-white/10 text-[var(--muted)] uppercase font-mono tracking-wider text-[10.5px]">
+                          <th className="py-2.5 px-3">Target Objective</th>
+                          <th className="py-2.5 px-3">Clinical Definition</th>
+                          <th className="py-2.5 px-3 text-right">Accuracy</th>
+                          <th className="py-2.5 px-3 text-right">Precision</th>
+                          <th className="py-2.5 px-3 text-right">Recall</th>
+                          <th className="py-2.5 px-3 text-right font-bold text-cyan-300">F1-Score</th>
+                          <th className="py-2.5 px-3 text-right font-bold text-amber-300">ROC-AUC</th>
+                          <th className="py-2.5 px-3 text-right">PR-AUC</th>
+                          <th className="py-2.5 px-3 text-center">Leakage Guard</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 font-mono">
+                        <tr className="hover:bg-white/[0.03] transition-colors">
+                          <td className="py-3 px-3 font-sans font-bold text-white flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-rose-400 shadow-[0_0_6px_#f43f5e]" />
+                            Overall CAD (cad_status)
+                          </td>
+                          <td className="py-3 px-3 font-sans text-[var(--muted)] text-[11px]">
+                            ≥50% diameter stenosis in ≥1 major artery
+                          </td>
+                          <td className="py-3 px-3 text-right text-slate-200">88.8%</td>
+                          <td className="py-3 px-3 text-right text-slate-200">92.5%</td>
+                          <td className="py-3 px-3 text-right text-slate-200">82.3%</td>
+                          <td className="py-3 px-3 text-right font-bold text-cyan-300">0.8705</td>
+                          <td className="py-3 px-3 text-right font-bold text-amber-300">0.9585</td>
+                          <td className="py-3 px-3 text-right text-slate-300">0.9613</td>
+                          <td className="py-3 px-3 text-center">
+                            <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                              Verified Zero Leak
+                            </span>
+                          </td>
+                        </tr>
+
+                        <tr className="hover:bg-white/[0.03] transition-colors">
+                          <td className="py-3 px-3 font-sans font-bold text-white flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
+                            LAD Stenosis (lad_stenosis)
+                          </td>
+                          <td className="py-3 px-3 font-sans text-[var(--muted)] text-[11px]">
+                            Left Anterior Descending ≥50% narrowing
+                          </td>
+                          <td className="py-3 px-3 text-right text-slate-200">84.7%</td>
+                          <td className="py-3 px-3 text-right text-slate-200">73.6%</td>
+                          <td className="py-3 px-3 text-right text-slate-200">67.9%</td>
+                          <td className="py-3 px-3 text-right font-bold text-cyan-300">0.7061</td>
+                          <td className="py-3 px-3 text-right font-bold text-amber-300">0.8733</td>
+                          <td className="py-3 px-3 text-right text-slate-300">0.6795</td>
+                          <td className="py-3 px-3 text-center">
+                            <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                              Verified Zero Leak
+                            </span>
+                          </td>
+                        </tr>
+
+                        <tr className="hover:bg-white/[0.03] transition-colors">
+                          <td className="py-3 px-3 font-sans font-bold text-white flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-indigo-400 shadow-[0_0_6px_#818cf8]" />
+                            LCx Stenosis (lcx_stenosis)
+                          </td>
+                          <td className="py-3 px-3 font-sans text-[var(--muted)] text-[11px]">
+                            Left Circumflex Artery ≥50% narrowing
+                          </td>
+                          <td className="py-3 px-3 text-right text-slate-200">83.7%</td>
+                          <td className="py-3 px-3 text-right text-slate-200">47.2%</td>
+                          <td className="py-3 px-3 text-right text-slate-200">3.4%</td>
+                          <td className="py-3 px-3 text-right font-bold text-cyan-300">0.0634</td>
+                          <td className="py-3 px-3 text-right font-bold text-amber-300">0.7264</td>
+                          <td className="py-3 px-3 text-right text-slate-300">0.3444</td>
+                          <td className="py-3 px-3 text-center">
+                            <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                              Verified Zero Leak
+                            </span>
+                          </td>
+                        </tr>
+
+                        <tr className="hover:bg-white/[0.03] transition-colors">
+                          <td className="py-3 px-3 font-sans font-bold text-white flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_6px_#fbbf24]" />
+                            RCA Stenosis (rca_stenosis)
+                          </td>
+                          <td className="py-3 px-3 font-sans text-[var(--muted)] text-[11px]">
+                            Right Coronary Artery ≥50% narrowing
+                          </td>
+                          <td className="py-3 px-3 text-right text-slate-200">79.9%</td>
+                          <td className="py-3 px-3 text-right text-slate-200">60.8%</td>
+                          <td className="py-3 px-3 text-right text-slate-200">49.6%</td>
+                          <td className="py-3 px-3 text-right font-bold text-cyan-300">0.5459</td>
+                          <td className="py-3 px-3 text-right font-bold text-amber-300">0.8607</td>
+                          <td className="py-3 px-3 text-right text-slate-300">0.5710</td>
+                          <td className="py-3 px-3 text-center">
+                            <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                              Verified Zero Leak
+                            </span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Footnote on Provenance and Guardrails */}
+                  <div className="pt-2 text-[11px] text-[var(--muted)] flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06]">
+                    <span>
+                      <strong>Leakage Guard Enforcement:</strong> <code className="text-cyan-300 bg-white/5 px-1 py-0.5 rounded">assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(FEATURES)</code> guarantees catheterization, fluoroscopy, and vessel stenosis ground truths are excluded from feature vectors at train and inference time.
+                    </span>
+                    <span className="text-emerald-400/90 font-medium">Brier Score: 0.0775 (High Probability Calibration)</span>
+                  </div>
+                </div>
+              </Card>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <footer className="text-center text-xs text-[var(--muted)] mt-8 pb-4">
+      {/* Track A Requirement 5: Prominent Clinical Safety Disclaimer (Bottom) */}
+      <div
+        id="clinical-safety-disclaimer-bottom"
+        role="note"
+        className="mt-8 rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/70 via-slate-900/90 to-amber-950/60 p-3.5 sm:p-4 shadow-lg backdrop-blur-md flex items-center gap-3.5 text-amber-200/95 text-xs sm:text-[13px] leading-relaxed"
+      >
+        <span className="text-amber-400 font-bold text-lg shrink-0">⚠️</span>
+        <div className="flex-1">
+          <strong className="font-bold text-amber-300 uppercase tracking-wide">CLINICAL SAFETY DISCLAIMER:</strong>{" "}
+          Predictions and 3D visualizations are for clinical decision support and educational purposes only and are NOT a substitute for formal diagnostic imaging (such as coronary angiography or cardiac CT) or professional medical diagnosis.
+        </div>
+      </div>
+
+      <footer className="text-center text-xs text-[var(--muted)] mt-6 pb-6">
         CardioFusion · Multimodal AI Hackathon 2026 Prototype · Decision-support only, not a medical device.
       </footer>
     </main>

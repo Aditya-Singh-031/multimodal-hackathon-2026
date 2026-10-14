@@ -32,13 +32,13 @@ SPECS = [
     ("Lata Pillai", "moderate", dict(age=64, sex="F", systolic_bp=158, cholesterol=245, smoker=False, diabetic=True, bmi=30.0, resting_hr=80, chest_pain_type=1, exercise_angina=True, st_elevation=False, t_inversion=False, lvh=True, rwma=0, cardiac_enzymes_elevated=False),
      0.38, [], "Occasional exertional chest discomfort. Type 2 diabetes. Hypertensive with LVH."),
     ("Kabir Singh", "high", dict(age=54, sex="M", systolic_bp=148, cholesterol=240, smoker=True, diabetic=False, bmi=28.5, resting_hr=78, chest_pain_type=2, exercise_angina=False, st_elevation=False, t_inversion=True, lvh=False, rwma=0, cardiac_enzymes_elevated=False),
-     0.25, [], "Patient reports exertional chest tightness. Provoked by climbing stairs. Current smoker, approx 18 pack-years. CTA: 45% non-obstructive LAD plaque."),
+     0.25, [], "Patient reports exertional chest tightness. Provoked by climbing stairs. Current smoker, approx 18 pack-years. T-wave inversions in anterior leads V2-V4 on stress testing."),
     ("Priya Sharma", "critical", dict(age=64, sex="F", systolic_bp=155, cholesterol=250, smoker=True, diabetic=True, bmi=30.0, resting_hr=80, chest_pain_type=2, exercise_angina=False, st_elevation=False, t_inversion=True, lvh=True, rwma=1, cardiac_enzymes_elevated=False),
-     0.35, ["RCA"], "Patient reports exertional chest tightness radiating to the jaw. Provoked by exercise. Type 2 diabetes on metformin. Current smoker. Inferior T inversions, basal inferior hypokinesia. Angiography: 75% mid-RCA stenosis."),
+     0.35, ["RCA"], "Patient reports exertional chest tightness radiating to the jaw. Provoked by exercise. Type 2 diabetes on metformin. Current smoker. Inferior T inversions, stress echo shows basal inferior hypokinesia."),
     ("Vikram Rao", "critical", dict(age=72, sex="M", systolic_bp=172, cholesterol=275, smoker=True, diabetic=True, bmi=32.0, resting_hr=90, chest_pain_type=3, exercise_angina=True, st_elevation=True, t_inversion=True, lvh=True, rwma=2, cardiac_enzymes_elevated=False),
-     0.85, ["LAD", "RCA", "LCx"], "Patient reports exertional chest tightness radiating to the left arm. Provoked by minimal exertion. Current smoker, approx 28 pack-years. Type 2 diabetes. Severe multivessel hypokinesia. Father had MI at age 51. Angiography: severe 3-vessel disease."),
+     0.85, ["LAD", "RCA", "LCx"], "Patient reports exertional chest tightness radiating to the left arm. Provoked by minimal exertion. Current smoker, approx 28 pack-years. Type 2 diabetes. Severe anterior and inferior hypokinesia on echo. Father had premature MI at age 51."),
     ("Dev Malhotra", "critical", dict(age=78, sex="M", systolic_bp=180, cholesterol=290, smoker=True, diabetic=True, bmi=33.0, resting_hr=94, chest_pain_type=3, exercise_angina=True, st_elevation=True, t_inversion=True, lvh=True, rwma=3, cardiac_enzymes_elevated=True),
-     0.95, ["LM", "LAD", "RCA", "LCx"], "Patient reports severe exertional chest tightness radiating to the arm and jaw. Current smoker. Type 2 diabetes. Father had MI at age 48. Markedly elevated troponin, extensive anterior/lateral akinesia. Angiography: left main and multivessel disease."),
+     0.95, ["LM", "LAD", "RCA", "LCx"], "Patient reports severe exertional chest tightness radiating to the arm and jaw. Current smoker. Type 2 diabetes. Father had premature MI at age 48. Markedly elevated troponin, extensive anterior and lateral wall akinesia on bedside echocardiography."),
 ]
 
 

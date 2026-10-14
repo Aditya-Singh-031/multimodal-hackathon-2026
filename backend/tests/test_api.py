@@ -83,3 +83,37 @@ def test_clinical_features_boundary():
     assert "ST elevation" in shap_feats
     assert "RWMA score" in shap_feats
     assert "Cardiac enzymes" in shap_feats
+
+
+def test_no_target_leakage_in_features():
+    """Requirement 1d: Verify strict target leakage prevention.
+
+    Coronary vessel labels (LAD, LCX, RCA, LM), catheterization/fluoroscopy findings (Cath/ca),
+    and target labels (cad_status, stenosis) must NEVER be present in the model's feature set
+    or accepted as input predictors in ClinicalFeatures.
+    """
+    from app.schemas import ClinicalFeatures
+    from app.services.tabular import FEATURES, FORBIDDEN_LEAKAGE_FEATURES
+
+    # 1. Assert module-level leakage guard
+    assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(FEATURES), (
+        f"Target leakage detected in FEATURES: {FORBIDDEN_LEAKAGE_FEATURES & set(FEATURES)}"
+    )
+
+    # 2. Key target/cath strings must be in the forbidden set
+    for key in ["LAD", "LCX", "RCA", "LM", "Cath", "cad_status", "lad_stenosis", "lcx_stenosis", "rca_stenosis"]:
+        assert key in FORBIDDEN_LEAKAGE_FEATURES
+
+    # 3. Input schema (ClinicalFeatures) must never accept target / vessel / cath fields as model inputs
+    schema_fields = set(ClinicalFeatures.model_fields.keys())
+    assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(schema_fields)
+    assert "lad" not in schema_fields
+    assert "lcx" not in schema_fields
+    assert "rca" not in schema_fields
+    assert "cath" not in schema_fields
+
+    # 4. Feature vector must be pure pre-catheterization clinical/ECG/echo predictors
+    features_lower = {f.lower() for f in FEATURES}
+    for forbidden in ["lad", "lcx", "rca", "cath", "stenosis", "cad_status", "target"]:
+        assert forbidden not in features_lower, f"Forbidden predictor '{forbidden}' found in FEATURES vector!"
+

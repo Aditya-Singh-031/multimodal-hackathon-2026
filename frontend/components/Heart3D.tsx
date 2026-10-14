@@ -605,6 +605,18 @@ export default function Heart3D({
             <strong className="text-white/80 font-medium">Methodological Guardrail:</strong> 3D vessel narrowing &amp; perfusion deficits are projected from multi-target ML predictions (CAD, LAD, LCX, RCA); clinical &amp; echo inputs (incl. RWMA) act strictly as model features.
           </span>
         </div>
+
+        {/* Prominent Clinical Safety Disclaimer (Track A Requirement 5) */}
+        <div
+          className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-[11px] text-amber-200/90 leading-relaxed flex items-start gap-2 shadow-sm"
+          id="heart-safety-disclaimer"
+          role="note"
+        >
+          <span className="shrink-0 text-amber-400 font-bold text-xs mt-0.5">⚠️</span>
+          <span>
+            <strong className="font-semibold text-amber-300">CLINICAL SAFETY DISCLAIMER:</strong> Predictions and 3D visualizations are for clinical decision support and educational purposes only and are NOT a substitute for formal diagnostic imaging (such as coronary angiography or cardiac CT) or professional medical diagnosis.
+          </span>
+        </div>
       </div>
     </div>
   );

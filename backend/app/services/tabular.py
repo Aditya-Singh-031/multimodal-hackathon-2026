@@ -25,6 +25,14 @@ LABELS = {"age": "Age", "sex_m": "Male sex", "systolic_bp": "Systolic BP", "chol
           "chest_pain_type": "Chest pain type", "exercise_angina": "Exercise angina",
           "st_elevation": "ST elevation", "t_inversion": "T-wave inversion", "lvh": "LVH",
           "rwma": "RWMA score", "cardiac_enzymes_elevated": "Cardiac enzymes"}
+
+# Requirement 1d: Strict Target Leakage Prevention guard
+FORBIDDEN_LEAKAGE_FEATURES = {
+    "LAD", "LCX", "RCA", "LM", "Cath",
+    "cad_status", "target", "lad_stenosis", "lcx_stenosis", "rca_stenosis",
+}
+assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(FEATURES), f"Target leakage in FEATURES: {FORBIDDEN_LEAKAGE_FEATURES & set(FEATURES)}"
+
 # Clinical priors: every modifiable/ordinal risk factor may only *increase* risk. This keeps the what-if simulator
 # physiologically sensible (lowering BP / quitting smoking can never raise a vessel's stenosis probability).
 MONOTONE = {"age": 1, "sex_m": 1, "systolic_bp": 1, "cholesterol": 1, "smoker": 1, "diabetic": 1, "bmi": 1,
@@ -62,6 +70,9 @@ def to_frame(f: ClinicalFeatures) -> pd.DataFrame:
 
 def fit_targets(X: pd.DataFrame, labels: dict[str, np.ndarray], seed: int = 42) -> dict[str, dict]:
     """Fit an uncalibrated base model (for SHAP) and a calibrated model (for probabilities) per target."""
+    assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(X.columns), (
+        f"Target leakage in training features: {FORBIDDEN_LEAKAGE_FEATURES & set(X.columns)}"
+    )
     out = {}
     for name in TARGETS:
         y = np.asarray(labels[name]).astype(int)
@@ -132,6 +143,9 @@ def predict_targets(f: ClinicalFeatures) -> tuple[dict[str, float], dict[str, li
     """Calibrated probability + SHAP (log-odds) for every target."""
     st = _load()
     X = to_frame(f)
+    assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(X.columns), (
+        f"Target leakage in inference features: {FORBIDDEN_LEAKAGE_FEATURES & set(X.columns)}"
+    )
     probs, shaps = {}, {}
     for n in TARGETS:
         probs[n] = float(st["targets"][n]["calibrated"].predict_proba(X)[0, 1])

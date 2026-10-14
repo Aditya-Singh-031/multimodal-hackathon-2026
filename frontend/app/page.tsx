@@ -17,6 +17,8 @@ import {
   WifiOff,
   Send,
   CheckCircle2,
+  Heart,
+  UserCheck,
 } from "lucide-react";
 import { getPatients, predict } from "@/lib/api";
 import { TIER_COLOR, type Patient, type Prediction, type Simulation } from "@/lib/types";
@@ -77,6 +79,10 @@ export default function Home() {
   const [offline, setOffline] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Clinician Mode vs. Patient Explainer Mode toggle
+  const [mode, setMode] = useState<"clinician" | "patient">("clinician");
+  const isPatient = mode === "patient";
 
   // Interactive Clinical Note Editor state
   const [editedNotes, setEditedNotes] = useState<string>("");
@@ -154,8 +160,8 @@ export default function Home() {
 
   return (
     <main className="max-w-[1560px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
-      {/* Header bar */}
-      <header className="flex flex-wrap items-center justify-between gap-4 mb-6">
+      {/* Top Header Bar with Mode Switcher */}
+      <header className="flex flex-wrap items-center justify-between gap-4 mb-5">
         <div>
           <h1 className="text-3xl md:text-4xl font-extrabold flex items-center gap-3 tracking-tight">
             <span className="pulse-ring inline-flex p-2 rounded-xl bg-[var(--accent)]/20 shadow-lg">
@@ -164,21 +170,81 @@ export default function Home() {
             <span className="gradient-text">CardioFusion</span>
           </h1>
           <p className="text-[var(--muted)] text-xs sm:text-sm mt-1">
-            Multimodal CAD Risk Intelligence · Tabular Clinical × 12-Lead ECG × Clinical Notes NLP
+            Multimodal CAD Intelligence · 3D Spatial Digital Twin · Tabular Clinical × 12-Lead ECG × Clinical Notes NLP
           </p>
         </div>
-        <div className="flex items-center gap-2.5 text-xs">
-          {offline ? (
-            <span id="mode-badge" className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30 font-medium">
-              <WifiOff size={13} /> Offline demo model
-            </span>
-          ) : (
-            <span id="mode-badge" className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30 font-medium">
-              <Sparkles size={13} /> Live backend{pred?.source === "mock" ? " · rule-based fallback" : " · Gemini live"}
-            </span>
-          )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Clinician Mode vs Patient Explainer Mode Segmented Switcher */}
+          <div className="flex items-center p-1 rounded-xl bg-white/[0.06] border border-white/10 shadow-inner">
+            <button
+              type="button"
+              id="mode-clinician-btn"
+              onClick={() => setMode("clinician")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                mode === "clinician"
+                  ? "bg-[var(--accent)] text-white shadow-md"
+                  : "text-white/60 hover:text-white"
+              }`}
+            >
+              <Stethoscope size={13} />
+              <span>Clinician Mode</span>
+            </button>
+            <button
+              type="button"
+              id="mode-patient-btn"
+              onClick={() => setMode("patient")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                mode === "patient"
+                  ? "bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-md animate-pulse"
+                  : "text-white/60 hover:text-white"
+              }`}
+            >
+              <Heart size={13} />
+              <span>Patient Explainer Mode</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs">
+            {offline ? (
+              <span id="mode-badge" className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30 font-medium">
+                <WifiOff size={13} /> Offline demo model
+              </span>
+            ) : (
+              <span id="mode-badge" className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30 font-medium">
+                <Sparkles size={13} /> Live backend{pred?.source === "mock" ? " · rule-based fallback" : " · Gemini live"}
+              </span>
+            )}
+          </div>
         </div>
       </header>
+
+      {/* Context Hero Callout (Track A Opening Mission Context) */}
+      <div className="mb-6 rounded-2xl border border-white/10 bg-gradient-to-r from-indigo-950/70 via-purple-950/40 to-slate-950/80 p-4 sm:p-5 shadow-xl backdrop-blur-md flex items-center gap-4">
+        <span className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 shrink-0 shadow-inner">
+          <Sparkles size={22} />
+        </span>
+        <div className="flex-1">
+          <div className="text-xs sm:text-sm text-white/95 leading-relaxed font-medium">
+            <strong className="text-cyan-300 font-bold uppercase tracking-wide text-xs block mb-0.5">
+              Bridging raw statistical risk scores into spatial 3D coronary anatomy:
+            </strong>
+            While statistical algorithms can generate risk percentages, raw numbers fail to give clinicians or patients an intuitive understanding of where and how pathology is developing inside the body. CardioFusion shows clinicians and patients{" "}
+            <span className="underline decoration-cyan-400 decoration-2 font-bold text-cyan-200">WHERE</span> arterial stenosis forms and{" "}
+            <span className="underline decoration-rose-400 decoration-2 font-bold text-rose-200">HOW</span> downstream myocardial ischemia develops.
+          </div>
+          <div className="flex items-center gap-3 mt-2 text-[11px] text-white/60">
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" /> Current Mode:{" "}
+              <strong className="text-white">
+                {mode === "clinician"
+                  ? "Clinician Mode (Full Hemodynamic Telemetry, FFR Proxies, 12-Lead ECG Leads & SHAP Log-Odds)"
+                  : "Patient Explainer Mode (Plain English Where & How Explanations, Recovery Roadmap & Prevention Plan)"}
+              </strong>
+            </span>
+          </div>
+        </div>
+      </div>
 
       {/* Top Cohort Selector Bar (Responsive Auto-Fit Grid for 10 Calibrated Demo Patients) */}
       <nav aria-label="Demo Cohort" className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2 mb-6" id="cohort-selector-grid">
@@ -296,13 +362,13 @@ export default function Home() {
                 1. PRIMARY LEFT STAGE (lg:col-span-7 xl:col-span-8): 3D Cardiac Twin
                 ----------------------------------------------------------------------- */}
             <Card
-              title="3D Cardiac Digital Twin · Hemodynamic Cockpit"
+              title={isPatient ? "Where Pathology Develops · 3D Heart Visualizer" : "3D Cardiac Digital Twin · Hemodynamic Cockpit"}
               icon={HeartPulse}
               id="card-heart"
               className="lg:col-span-7 xl:col-span-8 flex flex-col justify-between"
             >
               <div className="flex-1 flex flex-col min-h-0">
-                <Heart3D patient={sel} prediction={activePred} color={color} />
+                <Heart3D patient={sel} prediction={activePred} color={color} mode={mode} />
               </div>
             </Card>
 
@@ -312,8 +378,8 @@ export default function Home() {
                 ----------------------------------------------------------------------- */}
             <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-5">
               {/* Risk Assessment Card */}
-              <Card title="Cardiovascular Risk Assessment" icon={Activity} id="card-risk">
-                <RiskGauge risk={activePred.risk} tier={activePred.tier} confidence={activePred.confidence} />
+              <Card title={isPatient ? "Your Heart Health Summary" : "Cardiovascular Risk Assessment"} icon={Activity} id="card-risk">
+                <RiskGauge risk={activePred.risk} tier={activePred.tier} confidence={activePred.confidence} mode={mode} />
                 {isSimulating && (
                   <div className="mt-3 p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-xs text-cyan-200 flex items-center justify-between">
                     <span className="text-white/70">Counterfactual Shift</span>
@@ -337,17 +403,21 @@ export default function Home() {
                   ))}
                 </div>
                 <p className="text-xs text-[var(--muted)] mt-3 leading-relaxed" id="rationale">
-                  {activePred.rationale}
+                  {isPatient
+                    ? `Summary: ${activePred.tier === "low" ? "Your heart health is currently in good standing. Keep active!" : "Certain clinical factors are contributing to strain on your coronary arteries. Review the plain-English explanation in the 3D Inspector."}`
+                    : activePred.rationale}
                 </p>
               </Card>
 
               {/* Modality Contribution Card */}
-              <Card title="Modality Evidence Weight" icon={Stethoscope} id="card-modality">
+              <Card title={isPatient ? "Where Your Evidence Comes From" : "Modality Evidence Weight"} icon={Stethoscope} id="card-modality">
                 <div className="space-y-3">
                   {Object.entries(activePred.modality_contrib).map(([k, v]) => (
                     <div key={k}>
                       <div className="flex justify-between text-xs mb-1 capitalize">
-                        <span className="font-medium text-white/80">{k}</span>
+                        <span className="font-medium text-white/80">
+                          {isPatient ? (k === "clinical" ? "Health Measurements (BP/Chol)" : k === "ecg" ? "ECG Heart Rhythm" : "Doctor's Clinical Notes") : k}
+                        </span>
                         <span className="font-mono text-white/50">{(v * 100).toFixed(0)}%</span>
                       </div>
                       <div className="h-2 rounded-full bg-white/10 overflow-hidden">
@@ -363,12 +433,14 @@ export default function Home() {
                   ))}
                 </div>
                 <p className="text-[10.5px] text-[var(--muted)] mt-3">
-                  Proportionate share of evidence contributed to the fused logit.
+                  {isPatient
+                    ? "Shows how each data type contributes to understanding your overall heart health."
+                    : "Proportionate share of evidence contributed to the fused logit."}
                 </p>
               </Card>
 
               {/* What-If Counterfactual Simulator Card */}
-              <Card title="Interactive What-If Simulator" icon={SlidersHorizontal} id="card-whatif">
+              <Card title={isPatient ? "Test Healthy Lifestyle Habits (What-If)" : "Interactive What-If Simulator"} icon={SlidersHorizontal} id="card-whatif">
                 <WhatIf req={sel.request} onSimulate={setSim} resetKey={resetKey} />
               </Card>
             </div>
@@ -378,8 +450,8 @@ export default function Home() {
                    ECG Viewer (1/3) + SHAP Explainability (1/3) + Interactive Clinical Notes (1/3)
                 ----------------------------------------------------------------------- */}
             <div className="lg:col-span-12 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 items-stretch">
-              {/* Panel 1: ECG Waveform & Lead Corroboration */}
-              <Card title="12-Lead ECG Analysis & Waveform" icon={Activity} id="card-ecg">
+              {/* Panel 1: ECG Waveform */}
+              <Card title={isPatient ? "Your Heart Rhythm & Electrical Waveform" : "12-Lead ECG Analysis & Waveform"} icon={Activity} id="card-ecg">
                 {sel.request.ecg?.signal?.length ? (
                   <EcgViewer signal={sel.request.ecg.signal} fs={sel.request.ecg.sampling_rate} findings={activePred.ecg_findings} />
                 ) : (
@@ -388,16 +460,16 @@ export default function Home() {
               </Card>
 
               {/* Panel 2: Multi-Target SHAP Attributions */}
-              <Card title="Explainability · Multi-Target SHAP" icon={Sparkles} id="card-shap">
+              <Card title={isPatient ? "Why Your Health Score Was Calculated" : "Explainability · Multi-Target SHAP"} icon={Sparkles} id="card-shap">
                 <ShapChart shap={activePred.shap} />
               </Card>
 
               {/* Panel 3: Interactive Clinical Notes NLP & Live Extractor */}
-              <Card title="Clinical Notes NLP & Live Extractor" icon={FileText} id="card-notes">
+              <Card title={isPatient ? "Doctor's Clinical Notes Translated" : "Clinical Notes NLP & Live Extractor"} icon={FileText} id="card-notes">
                 <div className="space-y-3 flex-1 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between text-xs text-[var(--muted)] mb-1.5">
-                      <span>Interactive Clinical Narrative</span>
+                      <span>{isPatient ? "Patient Health Notes (Interactive)" : "Interactive Clinical Narrative"}</span>
                       {editedNotes !== sel.request.notes && (
                         <button
                           type="button"
@@ -434,18 +506,20 @@ export default function Home() {
                           </>
                         ) : (
                           <>
-                            <Send size={13} /> Re-Analyze Note &amp; Fuse
+                            <Send size={13} /> {isPatient ? "Update My Notes & Re-Score" : "Re-Analyze Note & Fuse"}
                           </>
                         )}
                       </button>
-                      <span className="text-[10px] text-white/40">Real-time NLP territorial extraction</span>
+                      <span className="text-[10px] text-white/40">
+                        {isPatient ? "Live AI entity translation" : "Real-time NLP territorial extraction"}
+                      </span>
                     </div>
                   </div>
 
                   {/* Extracted Structured Entities Display */}
                   <div className="pt-2 border-t border-white/[0.06] space-y-2">
                     <div className="text-[10.5px] uppercase font-bold tracking-wider text-[var(--muted)]">
-                      Extracted Clinical Entities
+                      {isPatient ? "Identified Health Points" : "Extracted Clinical Entities"}
                     </div>
                     <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto no-scrollbar">
                       {activePred.notes_entities?.risk_flags?.map((t) => (

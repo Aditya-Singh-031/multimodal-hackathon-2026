@@ -94,6 +94,7 @@ export interface EcgFindings {
 }
 export interface NotesEntities {
   symptoms: string[]; family_history: string[]; medications: string[]; risk_flags: string[]; summary: string;
+  territories?: string[]; vessel_weights?: Record<string, number>;
 }
 export interface Prediction {
   cad_status?: boolean;

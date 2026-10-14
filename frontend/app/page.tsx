@@ -20,7 +20,7 @@ import {
   Heart,
   UserCheck,
 } from "lucide-react";
-import { getPatients, predict } from "@/lib/api";
+import { getPatients, predict, simulate } from "@/lib/api";
 import { TIER_COLOR, type ClinicalFeatures, type Patient, type Prediction, type Simulation } from "@/lib/types";
 import RiskGauge from "@/components/RiskGauge";
 import ShapChart from "@/components/ShapChart";
@@ -30,6 +30,10 @@ import WhatIf from "@/components/WhatIf";
 const Heart3D = dynamic(() => import("@/components/Heart3D"), {
   ssr: false,
   loading: () => <div className="skeleton min-h-[460px] h-full w-full rounded-xl" />,
+});
+
+const TouchGrassSanctuary = dynamic(() => import("@/components/TouchGrassSanctuary"), {
+  ssr: false,
 });
 
 function Card({
@@ -88,6 +92,22 @@ export default function Home() {
   const [editedNotes, setEditedNotes] = useState<string>("");
   const [noteAnalyzing, setNoteAnalyzing] = useState(false);
   const [noteSuccess, setNoteSuccess] = useState(false);
+
+  // 3D Touch Grass Sanctuary state
+  const [touchGrassOpen, setTouchGrassOpen] = useState(false);
+
+  const handleApplyVagalCalm = useCallback(async () => {
+    setTouchGrassOpen(false);
+    if (!sel) return;
+    const currentBp = sel.request.features.systolic_bp ?? 130;
+    const newBp = Math.max(95, currentBp - 8);
+    try {
+      const { data } = await simulate(sel.request, { systolic_bp: newBp });
+      setSim(data);
+    } catch (e) {
+      console.warn("Vagal calm simulation error:", e);
+    }
+  }, [sel]);
 
   const run = useCallback(async (p: Patient) => {
     setSel(p);
@@ -161,6 +181,13 @@ export default function Home() {
 
   return (
     <main className="max-w-[1560px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+      {/* 3D Touch Grass Sanctuary Full-Screen Overlay */}
+      <TouchGrassSanctuary
+        open={touchGrassOpen}
+        onClose={() => setTouchGrassOpen(false)}
+        onApplyVagalCalm={handleApplyVagalCalm}
+      />
+
       {/* Top Header Bar with Mode Switcher */}
       <header className="flex flex-wrap items-center justify-between gap-4 mb-5">
         <div>
@@ -176,6 +203,18 @@ export default function Home() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {/* Distinctive Emerald Touch Grass Sanctuary Pill Button */}
+          <button
+            type="button"
+            id="touch-grass-btn"
+            onClick={() => setTouchGrassOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600/30 via-teal-600/25 to-emerald-600/30 hover:from-emerald-500/40 hover:to-teal-500/40 border border-emerald-400/40 text-emerald-200 hover:text-white text-xs font-semibold shadow-lg shadow-emerald-950/30 transition-all active:scale-95 cursor-pointer backdrop-blur-md"
+            title="Open 3D Touch Grass Sanctuary (Cardiac Stress-Reduction)"
+          >
+            <span className="text-sm">🌱</span>
+            <span>Touch Grass</span>
+          </button>
+
           {/* Clinician Mode vs Patient Explainer Mode Segmented Switcher */}
           <div className="flex items-center p-1 rounded-xl bg-white/[0.06] border border-white/10 shadow-inner">
             <button

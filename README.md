@@ -1,6 +1,7 @@
 # CardioFusion — Multimodal Cardiovascular Risk Visualization & 3D Digital Twin
 
-**Multimodal AI Hackathon 2026 · Track A**
+**Multimodal AI Hackathon 2026 · Track A**  
+*Lead Systems Architect & Principal AI Engineer*
 
 > *"While statistical algorithms can generate risk percentages, raw numbers fail to give clinicians or patients an intuitive understanding of where and how pathology is developing inside the body."*
 
@@ -8,108 +9,174 @@
 
 ---
 
+## Deliverables & Documentation Quicklinks
+- **Deliverable 1**: Complete Source Code (Backend FastAPI + Frontend Next.js 16 WebGL).
+- **Deliverable 2**: Trained Multi-Target Model Weights (`backend/models/tabular.joblib` committed and tracked in repository).
+- **Deliverable 3**: Cross-Validation Evaluation Metrics (`docs/metrics.json` and `metrics.json`).
+- **Deliverable 4**: Formal Project Technical Documentation (`docs/PROJECT_DOCUMENTATION.md` — 5 technical sections, $\le 6$ pages).
+- **Deliverable 5**: Prominent Clinical Safety Disclaimer (in UI, 3D viewport, and documentation).
+
+---
+
 ## Core Differentiators & UI Experience
 
 ### 1. Dual Persona Modes: Clinician vs. Patient Explainer
-- **🩺 Clinician Mode (Default)**: Comprehensive diagnostic & hemodynamic telemetry:
+- **🩺 Clinician Mode (Default)**: Diagnostic & hemodynamic telemetry:
   - Fractional Flow Reserve (FFR) proxy & lumen area reduction (%)
   - Fluoroscopy diseased vessel count (`ca: 0–3`) & exercise ST depression (`oldpeak` mm)
   - 12-lead territorial lead corroboration (`V1–V4` anterior/LAD, `I, aVL, V5–V6` lateral/LCx, `II, III, aVF` inferior/RCA)
   - Multi-target SHAP log-odds feature attributions across CAD and individual coronary vessels.
-- **🫀 Patient Explainer Mode**: Translates complex angiographic physics into plain, empathetic language:
-  - **WHERE**: Clearly identifies which heart artery is affected in everyday terms (e.g., *"Front Main Artery (LAD) — supplies the primary front pumping wall"*).
-  - **HOW**: Explains the mechanical impact of plaque narrowing on oxygen delivery and physical symptoms (angina, fatigue when climbing stairs).
-  - **Actionable Recovery & Prevention Plan**: Dynamically linked to the patient's modifiable drivers (smoking cessation, BP reduction towards 120 mmHg, dietary cholesterol, blood glucose control).
+- **🫀 Patient Explainer Mode**: Translates angiographic physics into plain, empathetic language:
+  - **WHERE**: Identifies which heart artery is affected in everyday terms (*"Front Main Artery (LAD) — supplies the primary front pumping wall"*).
+  - **HOW**: Explains the mechanical impact of plaque narrowing on oxygen delivery and physical symptoms (angina, fatigue).
+  - **Actionable Recovery & Prevention Plan**: Dynamically linked to patient's modifiable drivers (smoking cessation, BP reduction towards 120 mmHg, dietary cholesterol, blood glucose control).
 
 ### 2. Interactive "WHERE & HOW Pathology Develops" Cascade
 A 4-stage visual pathophysiological progression strip driven by multi-target ML predictions:
 1. **Stage 1: Systemic Triggers** — Endothelial injury and lipid infiltration from smoking, hypertension, diabetes, and hyperlipidemia.
 2. **Stage 2: Atherosclerotic Plaque & Pinching** — Localized atheroma narrowing the lumen at specific 3D coordinates.
-3. **Stage 3: Hemodynamic Flow Drop** — Venturi jet acceleration through the stenosis and downstream hyperemic flow reduction ($FFR \le 0.80$).
+3. **Stage 3: Hemodynamic Flow Drop** — Venturi jet acceleration through stenosis and downstream hyperemic flow reduction ($FFR \le 0.80$).
 4. **Stage 4: Myocardial Ischemia & Wall Strain** — Dusky purple hypoxic territory, correlated ECG ST/T changes, and regional systolic hypokinesia.
-*Clicking any stage immediately activates targeted 3D shader emphasis (Plaque Cuff, Hemodynamic Particles, or Ischemic Perfusion Map).*
-
-### 3. Multimodal Fusion Engine
-CardioFusion fuses three distinct modalities in logit space:
-
-| Modality | Source | Processing |
-|---|---|---|
-| Clinical data | Real UCI Cleveland (N=303) + 1,500 synthetic cohort | Multi-target XGBoost with Platt calibration (`cad_status`, `LAD`, `LCx`, `RCA`), TreeSHAP explainer |
-| 12-Lead ECG signal | PTB-XL samples / synthetic | Band-pass filter, R-peak detection, HRV (RMSSD), QRS duration, territorial ST-deviation features |
-| Clinical notes | Synthetic cath & clinical notes | Gemini structured entity extraction with deterministic regex fallback |
 
 ---
 
-## Architecture
+## System Architecture
+
 ```
-frontend (Next.js 16, Tailwind, Three.js / R3F, Framer Motion)
+frontend (Next.js 16, Tailwind, Three.js / React Three Fiber, Framer Motion)
    │  Offline deterministic mock model if backend is unreachable
    └─── HTTP (REST) ───>  backend (FastAPI / Pydantic)
-                             ├─ services/tabular.py      (XGBoost + Platt calibration + TreeSHAP)
-                             ├─ services/vessel_labels.py (Prevalence-conditioned multi-target sampling)
-                             ├─ services/ecg.py          (12-lead band-pass + ST/T territorial mapping)
+                             ├─ services/tabular.py      (4 Calibrated XGBoost + Platt Sigmoid + TreeSHAP)
+                             ├─ services/vessel_labels.py (Angiographic prevalence multi-target priors)
+                             ├─ services/ecg.py          (12-lead band-pass + territorial ST/T mapping)
                              ├─ services/notes.py        (Gemini structured extraction + territorial weights)
-                             └─ services/fusion.py       (Logit-space multimodal fusion + hemodynamic coupling)
+                             └─ services/fusion.py       (Logit-space late fusion + hemodynamic coupling)
 data/ raw (UCI Cleveland, PTB-XL) + synthetic (cohort, 12-lead ECG waveforms, clinical notes)
+models/ backend/models/tabular.joblib (Trained multi-target model weights tracked in Git)
 ```
 
 ---
 
-## Quickstart
+## Section 1: Dataset Preprocessing & Target Leakage Prevention
+
+### 1.1 Dataset Sources
+- **Real UCI Cleveland Heart Disease Dataset ($N=303$)**: Gold-standard clinical benchmark containing non-invasive patient attributes, fluoroscopy diseased vessel count (`ca`: 0–3), exercise ST depression (`oldpeak`), and clinical coronary artery disease status (`target`: 0 vs 1–4).
+- **Synthetic Multimodal Cohort ($N=1,500$)**: Generated using clinically calibrated Bayesian priors derived from AHA/ACC prevention guidelines, Framingham risk factors, and Duke Treadmill Score distributions.
+
+### 1.2 Feature Engineering & Normalization
+The primary tabular feature vector consists of 15 non-invasive clinical predictors:
+- Demographic & Hemodynamic: `age`, `sex_m`, `systolic_bp`, `cholesterol`, `smoker`, `diabetic`, `bmi`, `resting_hr`, `chest_pain_type`, `exercise_angina`.
+- Pre-catheterization ECG/Echo Biomarkers:
+  - Left Ventricular Hypertrophy (`lvh`): Estes' ECG criteria.
+  - Acute Ischemic Repolarization (`st_elevation`, `t_inversion`): 12-lead territorial ischemic signatures.
+  - Echocardiographic Wall Motion (`rwma`): Regional Wall Motion Abnormality score ($0$: Normal to $4$: Dyskinesia).
+  - Myocardial Necrosis Marker (`cardiac_enzymes_elevated`): High-sensitivity Troponin / CK-MB elevation.
+- Monotonic Constraints: XGBoost `monotone_constraints` enforce non-negative gradients for all atherogenic risk factors.
+
+### 1.3 Strict Target Leakage Prevention (Requirement 1d)
+- **Module-Level Forbidden Set**:
+  ```python
+  FORBIDDEN_LEAKAGE_FEATURES = {
+      "LAD", "LCX", "RCA", "LM", "Cath",
+      "cad_status", "target", "lad_stenosis", "lcx_stenosis", "rca_stenosis",
+  }
+  assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(FEATURES)
+  ```
+- **Multi-Point Runtime Enforcement**: Asserted in `app/services/tabular.py` and `scripts/train_tabular.py` prior to model fitting (`fit_targets`), cross-validation (`evaluate_cv`), and inference (`predict_targets`).
+- **Narrative Cleaning**: Demo cohort patient notes (`demo_cohort.py` and `mock.ts`) strictly contain non-invasive clinical history, symptom timelines, and echocardiographic findings — catheterization and angiography labels are completely excluded.
+- **Automated Test Guard**: `backend/tests/test_api.py::test_no_target_leakage_in_features` asserts that neither `ClinicalFeatures` schemas nor feature vectors contain any catheterization, vessel, or target strings.
+
+---
+
+## Section 2: Model Architecture & Multimodal Late-Fusion
+
+### 2.1 Multi-Target Calibrated Classifiers
+CardioFusion fits four independent tree ensembles using `xgboost.XGBClassifier`:
+1. `cad_status`: Overall CAD ($\ge 50\%$ diameter stenosis in any major epicardial coronary artery).
+2. `lad_stenosis`: Left Anterior Descending artery ($\ge 50\%$).
+3. `lcx_stenosis`: Left Circumflex artery ($\ge 50\%$).
+4. `rca_stenosis`: Right Coronary Artery ($\ge 50\%$).
+
+Platt sigmoid calibration (`CalibratedClassifierCV(method="sigmoid", cv=3)`) guarantees continuous, strictly monotonic probability estimates, preventing step plateaus and yielding strong probability calibration ($\text{Brier} = 0.0775$).
+
+### 2.2 Exact TreeSHAP Local & Global Feature Attribution
+Direct `shap.TreeExplainer` evaluation computes exact Shapley values in log-odds space ($\phi_i(x)$). The UI displays both signed log-odds shifts and relative attribution percentages:
+$$\text{Relative Contribution \%} = \frac{|\phi_i|}{\sum_{j=1}^{M} |\phi_j|} \times 100\%$$
+accompanied by patient physiological measurements and clinical units ($172\text{ mmHg}$, $275\text{ mg/dL}$, $\text{Grade } 3/4\text{ RWMA}$).
+
+### 2.3 Multimodal Late-Fusion Engine (`app/services/fusion.py`)
+Evidence is fused in logit space across clinical tabular data, 12-lead ECG waveforms, and clinical notes:
+$$z_{\text{patient}} = \text{logit}(p_{\text{tabular}}) + W_{\text{ECG}} \cdot (\text{abnormality} - 0.3) + W_{\text{note}} \cdot N_{\text{extra\_flags}} + W_{\text{coupling}} \cdot \Delta z_{\text{territorial}}$$
+- **12-Lead ECG Territorial Mapping**: Precordial leads $V_1-V_4 \to \text{LAD}$; lateral leads $I, aVL, V_5, V_6 \to \text{LCx}$; inferior leads $II, III, aVF \to \text{RCA}$.
+- **Left Main (`LM`) Derivation**: Derived from joint LAD/LCx involvement with negative offset prior ($LM_{\text{offset}} = -1.6$).
+- **Law of Total Probability Cap**: $P(\text{vessel} \ge 50\%) \le \min\left(0.995, P(\text{Overall CAD})\right)$.
+
+---
+
+## Section 3: 3D Anatomical Pipeline & Shader Setup
+
+1. **Mesh Normalization & Raycast Snapping (`anatomy.ts`)**:
+   `heart.glb` bounding box is centered and scaled to uniform height 2.0. Coronary centerlines authored in cylindrical coordinates $[y, \text{azimuth}^\circ]$ snap to the outer myocardial surface via dynamic raycasting at load time.
+2. **Frenet-Frame Gaussian Lumen Pinching (`vessels.tsx`)**:
+   Coronary tubes are generated along continuous Frenet-Serret frames $(T, N, B)$. At stenosis $\ge 50\%$, the tube radius narrows at lesion coordinate $u_{\text{lesion}}$:
+   $$r(u) = r_0 \left[1 - \exp\left(-\left(\frac{u - u_{\text{lesion}}}{0.055}\right)^2\right) \cdot (1 - \max(0.15, 1 - \text{stenosisFrac}))\right]$$
+   encircled by a metallic torus **Plaque Cuff**.
+3. **InstancedMesh Venturi Blood-Flow Particles**:
+   Thousands of blood corpuscles dynamically accelerate through the stenosis throat according to $A_1 v_1 = A_2 v_2$ and decelerate into disordered turbulence downstream ($FFR \le 0.80$).
+4. **Custom GLSL Shaders (`shaders.ts`)**:
+   - **Fresnel X-Ray Transparency**: Injected into `MeshStandardMaterial` for translucent rim lighting, enabling clear visualization of posterior vessels and lumen geometry through cardiac chambers.
+   - **Ischemic Perfusion Map**: Fragment shader computes shortest distance to diseased polylines and renders a dusky-purple ischemic footprint ($e^{-(d/r)^2}$) with out-of-phase hypoxic pulsation.
+   - **Systolic Wall-Motion Attenuation (Regional Hypokinesia)**: Vertex shader modulates inward systolic contraction:
+     $$\Delta \mathbf{v} = -\mathbf{n} \cdot \left[u_{\text{beat}} \cdot 0.045 \cdot (1 - 0.85 \cdot \text{ischemicHypokinesia})\right]$$
+     accurately rendering regional hypokinesia and akinesia.
+
+---
+
+## Section 4: Usage Instructions & Reproducibility
 
 ### Prerequisites
 - Python 3.11+
-- Node.js 18+
+- Node.js 18.18+
 
 ### 1. Backend Setup
 ```powershell
 cd backend
 python -m venv .venv
-.\.venv\Scripts\pip install -r requirements.txt
-.\.venv\Scripts\python scripts\download_data.py     # optional real data
-.\.venv\Scripts\python scripts\make_synthetic.py    # builds demo cohort and calibrates 10 patients
-.\.venv\Scripts\python -m uvicorn app.main:app --port 8000
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python scripts\train_tabular.py --source uci        # Train models & evaluate 5-fold CV
+python scripts\make_synthetic.py                   # Calibrate 10-patient demo cohort
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 2. Frontend Setup
 ```powershell
-cd frontend
+cd ..\frontend
 npm install
-npm run dev        # Visit http://localhost:3000
+npm run build                                      # Type-check verification (0 errors)
+npm run dev                                        # Local server at http://localhost:3000
 ```
-*Optional root `.env`: `GEMINI_API_KEY=...` (enables live Gemini extraction; falls back gracefully to rule-based NLP if omitted or timed out).*
+
+### 3. Automated Verification Suite
+```powershell
+.\backend\.venv\Scripts\python.exe -m pytest backend/tests -v -q
+```
+*Result: 9 passed, 0 failures (including target leakage verification and API contracts).*
 
 ---
 
-## Model Benchmarks & Metrics (Track A Req 1d & 1e)
+## Section 5: Evaluation Results & Cross-Validation Benchmarks (Req 1d & 1e)
 
 Evaluated via **5-fold Stratified Cross-Validation with 3 repeats** on the real UCI Cleveland Heart Disease dataset (out-of-fold predictions):
 
-| Target Objective | Accuracy | Precision | Recall | F1-Score | ROC-AUC | PR-AUC | Brier Score | Zero Leakage Status |
-|---|---|---|---|---|---|---|---|---|
-| **cad_status (Overall CAD)** | **88.8%** | **92.5%** | **82.3%** | **0.8705** | **0.9585** | **0.9613** | **0.0775** | ✓ Verified Excluded |
-| **lad_stenosis (LAD $\ge$ 50%)** | **84.7%** | **73.6%** | **67.9%** | **0.7061** | **0.8733** | **0.6795** | **0.1164** | ✓ Verified Excluded |
-| **rca_stenosis (RCA $\ge$ 50%)** | **79.9%** | **60.8%** | **49.6%** | **0.5459** | **0.8607** | **0.5710** | **0.1341** | ✓ Verified Excluded |
-| **lcx_stenosis (LCx $\ge$ 50%)** | **83.7%** | **47.2%** | **3.4%** | **0.0634** | **0.7264** | **0.3444** | **0.1246** | ✓ Verified Excluded |
+| Target Objective | Clinical Definition | Accuracy | Precision | Recall | F1-Score | ROC-AUC | PR-AUC | Brier Score | Zero Leakage Status |
+|---|---|---|---|---|---|---|---|---|---|
+| **cad_status** | Overall CAD ($\ge 50\%$ stenosis in $\ge 1$ vessel) | **88.8%** | **92.5%** | **82.3%** | **0.8705** | **0.9585** | **0.9613** | **0.0775** | ✓ Verified Excluded |
+| **lad_stenosis** | Left Anterior Descending ($\ge 50\%$ stenosis) | **84.7%** | **73.6%** | **67.9%** | **0.7061** | **0.8733** | **0.6795** | **0.1164** | ✓ Verified Excluded |
+| **rca_stenosis** | Right Coronary Artery ($\ge 50\%$ stenosis) | **79.9%** | **60.8%** | **49.6%** | **0.5459** | **0.8607** | **0.5710** | **0.1341** | ✓ Verified Excluded |
+| **lcx_stenosis** | Left Circumflex Artery ($\ge 50\%$ stenosis) | **83.7%** | **47.2%** | **3.4%** | **0.0634** | **0.7264** | **0.3444** | **0.1246** | ✓ Verified Excluded |
 
-*See full evaluation results in [docs/metrics.json](docs/metrics.json).*
-
-### Strict Zero Target Leakage Prevention (Req 1d)
-- **Code Enforcement**: `assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(FEATURES)` is asserted at module load, prior to training, and before inference in `app/services/tabular.py` and `scripts/train_tabular.py`.
-- **Forbidden Predictors**: `{"LAD", "LCX", "RCA", "LM", "Cath", "cad_status", "target", "lad_stenosis", "lcx_stenosis", "rca_stenosis"}` are strictly prohibited from model feature sets and input schemas.
-- **Narrative Cleaning**: Demo cohort patient notes (`demo_cohort.py` and `mock.ts`) strictly contain non-invasive clinical history, symptom timelines, and echocardiographic findings — catheterization and angiography labels are completely excluded.
-- **Automated Test Guard**: `backend/tests/test_api.py::test_no_target_leakage_in_features` validates that forbidden targets are excluded from schema fields and feature vectors.
-
----
-
-## Verification & Testing
-```powershell
-# Run backend test suite (9 test cases, zero target leakage verification & API contracts)
-.\backend\.venv\Scripts\python.exe -m pytest backend/tests -q
-
-# Run frontend production build
-cd frontend; npm run build
-```
+*Detailed metrics recorded in [docs/metrics.json](docs/metrics.json).*
 
 ---
 

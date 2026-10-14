@@ -8,7 +8,8 @@ build/
 .next/
 .DS_Store
 backend/.venv/
-backend/models/
+backend/models/*
+!backend/models/*.joblib
 frontend/shots/
 data/synthetic/ecg/
 data/raw/ptbxl/

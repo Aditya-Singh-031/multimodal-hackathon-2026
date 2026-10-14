@@ -21,7 +21,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { getPatients, predict } from "@/lib/api";
-import { TIER_COLOR, type Patient, type Prediction, type Simulation } from "@/lib/types";
+import { TIER_COLOR, type ClinicalFeatures, type Patient, type Prediction, type Simulation } from "@/lib/types";
 import RiskGauge from "@/components/RiskGauge";
 import ShapChart from "@/components/ShapChart";
 import EcgViewer from "@/components/EcgViewer";
@@ -156,7 +156,8 @@ export default function Home() {
   const activePred = sim?.modified ?? pred;
   const isSimulating = sim !== null;
   const color = activePred ? TIER_COLOR[activePred.tier] : "#7c5cff";
-  const f = sel?.request.features;
+  const activeFeatures: ClinicalFeatures | undefined = sel?.request.features;
+  const f = activeFeatures;
 
   return (
     <main className="max-w-[1560px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
@@ -474,7 +475,7 @@ export default function Home() {
 
               {/* Panel 2: Multi-Target SHAP Attributions */}
               <Card title={isPatient ? "Why Your Health Score Was Calculated" : "Explainability · Multi-Target SHAP"} icon={Sparkles} id="card-shap">
-                <ShapChart shap={activePred.shap} features={f} />
+                <ShapChart shap={activePred.shap} features={activeFeatures} />
               </Card>
 
               {/* Panel 3: Interactive Clinical Notes NLP & Live Extractor */}

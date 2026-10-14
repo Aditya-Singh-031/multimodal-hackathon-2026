@@ -48,7 +48,6 @@ from app.config import settings  # noqa: E402
 from app.services.tabular import (  # noqa: E402
     _ART,
     FEATURES,
-    FORBIDDEN_LEAKAGE_FEATURES,
     LABELS,
     build_artifact,
     fit_targets,
@@ -56,7 +55,11 @@ from app.services.tabular import (  # noqa: E402
 )
 from app.services.vessel_labels import TARGETS, derive_vessel_labels, severity_to_vessel_count  # noqa: E402
 
-# Requirement 1d: Assert strict target leakage prevention prior to evaluation/training
+# Requirement 1d: Explicitly define strict target leakage prevention guard
+FORBIDDEN_LEAKAGE_FEATURES = {
+    "LAD", "LCX", "RCA", "LM", "Cath",
+    "cad_status", "target", "lad_stenosis", "lcx_stenosis", "rca_stenosis",
+}
 assert FORBIDDEN_LEAKAGE_FEATURES.isdisjoint(FEATURES), (
     f"Target leakage in FEATURES: {FORBIDDEN_LEAKAGE_FEATURES & set(FEATURES)}"
 )

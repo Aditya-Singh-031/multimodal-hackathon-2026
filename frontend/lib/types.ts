@@ -26,6 +26,9 @@ export interface Features {
   /** ST depression induced by exercise relative to rest in mm (UCI CAD feature) */
   oldpeak?: number;
 }
+
+export type ClinicalFeatures = Features;
+
 export interface PredictRequest {
   features: Features;
   ecg?: { signal: number[]; sampling_rate: number } | null;

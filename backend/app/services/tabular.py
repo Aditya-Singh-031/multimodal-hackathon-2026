@@ -9,7 +9,15 @@ import numpy as np
 import pandas as pd
 import shap
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score,
+    average_precision_score,
+    brier_score_loss,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
 
@@ -111,9 +119,18 @@ def train() -> dict:
     for n in TARGETS:
         p = held[n]["calibrated"].predict_proba(X.iloc[te])[:, 1]
         yt = labels[n][te]
-        metrics[n] = {"roc_auc": round(float(roc_auc_score(yt, p)), 4),
-                      "pr_auc": round(float(average_precision_score(yt, p)), 4),
-                      "prevalence": round(float(labels[n].mean()), 4), "n_samples": int(len(yt))}
+        pred = (p >= 0.5).astype(int)
+        metrics[n] = {
+            "accuracy": round(float(accuracy_score(yt, pred)), 4),
+            "precision": round(float(precision_score(yt, pred, zero_division=0)), 4),
+            "recall": round(float(recall_score(yt, pred, zero_division=0)), 4),
+            "f1": round(float(f1_score(yt, pred, zero_division=0)), 4),
+            "roc_auc": round(float(roc_auc_score(yt, p)), 4),
+            "pr_auc": round(float(average_precision_score(yt, p)), 4),
+            "brier_score": round(float(brier_score_loss(yt, p)), 4),
+            "prevalence": round(float(labels[n].mean()), 4),
+            "n_samples": int(len(yt)),
+        }
     targets = fit_targets(X, labels)
     art = build_artifact(targets, metrics, "Synthetic Cohort (auto-trained fallback)",
                          "synthetic vessel identity (seeded literature priors)", datetime.now(timezone.utc).isoformat())

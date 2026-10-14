@@ -1,10 +1,10 @@
 "use client";
 import { motion } from "framer-motion";
-import type { Features, Shap } from "@/lib/types";
+import type { ClinicalFeatures, Features, Shap } from "@/lib/types";
 
 interface ShapChartProps {
   shap: Shap[];
-  features?: Features;
+  features?: ClinicalFeatures;
 }
 
 interface FormattedFeature {
@@ -13,7 +13,7 @@ interface FormattedFeature {
   isAbnormal?: boolean;
 }
 
-function formatMeasurement(featureName: string, value: number, f?: Features): FormattedFeature {
+function formatMeasurement(featureName: string, value: number, f?: ClinicalFeatures): FormattedFeature {
   const norm = featureName.toLowerCase();
 
   if (norm.includes("systolic") || norm === "systolic_bp") {
@@ -126,7 +126,7 @@ function formatMeasurement(featureName: string, value: number, f?: Features): Fo
 export default function ShapChart({ shap, features }: ShapChartProps) {
   const top = shap.slice(0, 8);
   const max = Math.max(...top.map((s) => Math.abs(s.contribution)), 0.01);
-  const totalAbs = top.reduce((sum, s) => sum + Math.abs(s.contribution), 0);
+  const totalAbs = shap.reduce((sum, s) => sum + Math.abs(s.contribution), 0) || 1;
 
   return (
     <div className="space-y-2.5" id="shap-chart">

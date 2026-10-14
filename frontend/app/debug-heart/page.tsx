@@ -5,8 +5,10 @@ import { Html, useGLTF } from "@react-three/drei";
 import { Suspense, useMemo } from "react";
 import * as THREE from "three";
 
+const HEART_URL = `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/models/heart.glb`;
+
 function M() {
-  const { scene } = useGLTF("/models/heart.glb");
+  const { scene } = useGLTF(HEART_URL);
   const obj = useMemo(() => {
     const c = scene.clone(true);
     const box = new THREE.Box3().setFromObject(c);

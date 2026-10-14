@@ -6,6 +6,8 @@ __pycache__/
 dist/
 build/
 .next/
+out/
+frontend/out/
 .DS_Store
 backend/.venv/
 backend/models/*

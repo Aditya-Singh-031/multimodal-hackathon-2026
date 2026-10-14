@@ -9,7 +9,7 @@ import { buildAnatomy, cameraFor, FALLBACK_ANATOMY, GLOW_SAMPLES, type Anatomy, 
 import { createPerfusionUniforms, createVesselMaterial, patchMyocardium, type SharedPerfusionUniforms } from "./shaders";
 import { createPinchedTubeGeometry, FIXED_VESSEL_IDS, PlaqueCuff, CoronaryFlowParticles } from "./vessels";
 
-export const HEART_URL = "/models/heart.glb";
+export const HEART_URL = `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/models/heart.glb`;
 useGLTF.preload(HEART_URL);
 
 export interface SceneProps {

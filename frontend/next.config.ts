@@ -1,9 +1,14 @@
 import type { NextConfig } from "next";
 
+const isGithubPages = process.env.GITHUB_PAGES === "true";
+const basePath = isGithubPages ? "/multimodal-hackathon-2026" : "";
+
 const nextConfig: NextConfig = {
   /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  ...(!isGithubPages && {
+    cacheComponents: true,
+    partialPrefetching: true,
+  }),
   turbopack: {
     rules: {
       "*.css": {
@@ -11,6 +16,16 @@ const nextConfig: NextConfig = {
         as: "*.css",
       },
     },
+  },
+  ...(isGithubPages
+    ? {
+        output: "export",
+        basePath,
+        images: { unoptimized: true },
+      }
+    : {}),
+  env: {
+    NEXT_PUBLIC_BASE_PATH: basePath,
   },
 };
 

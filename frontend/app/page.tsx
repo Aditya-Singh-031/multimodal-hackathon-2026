@@ -106,7 +106,7 @@ export default function Home() {
 
       <AnimatePresence mode="wait">
         {pred && sel && f && (
-          <motion.div key={sel.id} initial={{ opacity: 0 }} animate={{ opacity: loading ? 0.5 : 1 }} exit={{ opacity: 0 }}
+          <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: loading ? 0.5 : 1 }} exit={{ opacity: 0 }}
             className="grid grid-cols-1 lg:grid-cols-3 gap-5 transition-opacity">
             <Card title="Risk assessment" icon={Activity} id="card-risk">
               <RiskGauge risk={pred.risk} tier={pred.tier} confidence={pred.confidence} />

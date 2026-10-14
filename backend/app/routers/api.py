@@ -19,7 +19,8 @@ def _patients() -> list[PatientRecord]:
 @router.get("/health")
 def health():
     return {"status": "ok", "demo_mode": settings.demo_mode, "llm": bool(settings.gemini_api_key),
-            "model_auc": round(tabular.model_auc(), 3)}
+            "model_auc": round(tabular.model_auc(), 3),
+            "target_auc": {k: v.get("roc_auc") for k, v in tabular.target_metrics().items()}}
 
 
 @router.post("/predict", response_model=PredictResponse)
@@ -43,7 +44,9 @@ def simulate(req: SimulateRequest):
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(422, str(exc)) from exc
     mod = fusion.run(mod_req)
-    return SimulateResponse(baseline=base, modified=mod, delta_risk=round(mod.risk - base.risk, 4))
+    base_p = {v.id: v.stenosis_prob for v in base.vessels}
+    delta_v = {v.id: round(v.stenosis_prob - base_p.get(v.id, 0.0), 4) for v in mod.vessels}
+    return SimulateResponse(baseline=base, modified=mod, delta_risk=round(mod.risk - base.risk, 4), delta_vessels=delta_v)
 
 
 @router.get("/patients", response_model=list[PatientRecord])

@@ -7,11 +7,13 @@ import type { VesselAssessment, VesselId } from "@/lib/types";
 import { STATUS_COLOR, VESSEL_IDS } from "@/lib/vessels";
 import { buildAnatomy, cameraFor, FALLBACK_ANATOMY, GLOW_SAMPLES, type Anatomy, type ViewId } from "./anatomy";
 import { createPerfusionUniforms, createVesselMaterial, patchMyocardium, type SharedPerfusionUniforms } from "./shaders";
+import { createPinchedTubeGeometry, FIXED_VESSEL_IDS, PlaqueCuff } from "./vessels";
 
 export const HEART_URL = "/models/heart.glb";
 useGLTF.preload(HEART_URL);
 
 export interface SceneProps {
+  portal?: React.RefObject<HTMLElement>;
   assessments: VesselAssessment[];
   bpm: number;
   tint: string;
@@ -76,20 +78,25 @@ const glowTarget = (assessments: VesselAssessment[]) => {
   const byId = Object.fromEntries(assessments.map((a) => [a.id, a])) as Record<VesselId, VesselAssessment | undefined>;
   const own = (id: VesselId) => {
     const a = byId[id];
-    return a && a.status === "critical" ? 0.55 + ((a.stenosis - 50) / 50) * 0.4 : 0;
+    return a && a.stenosis >= 50 ? 0.55 + ((a.stenosis - 50) / 50) * 0.45 : 0;
   };
   const lm = own("LM");
   // Left-main disease jeopardises both LAD and LCx territories.
-  return VESSEL_IDS.map((id) => (id === "LAD" || id === "LCx" ? Math.max(own(id), lm * 0.8) : own(id)));
+  return VESSEL_IDS.map((id) => (id === "LAD" || id === "LCx" ? Math.max(own(id), lm * 0.85) : own(id)));
 };
 
 function ModelHeart({ assessments, tint, live, onAnatomy }: { assessments: VesselAssessment[]; tint: string; live: React.RefObject<Live>; onAnatomy: (a: Anatomy) => void }) {
   const { scene } = useGLTF(HEART_URL);
   const model = useMemo(() => prepareModel(scene), [scene]);
   const targets = useMemo(() => glowTarget(assessments), [assessments]);
-  const critical = useMemo(() => new THREE.Color(STATUS_COLOR.critical), []);
+  const ischemicDeficit = useMemo(() => new THREE.Color("#6b21a8"), []);
 
-  useLayoutEffect(() => onAnatomy(model.anatomy), [model, onAnatomy]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      onAnatomy(model.anatomy);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [model, onAnatomy]);
 
   useEffect(() => {
     const c = new THREE.Color("#ffffff").lerp(new THREE.Color(tint), 0.32);
@@ -100,13 +107,14 @@ function ModelHeart({ assessments, tint, live, onAnatomy }: { assessments: Vesse
     });
   }, [model, tint]);
 
-  useFrame((_, dt) => {
+  useFrame(({ clock }, dt) => {
     const u = model.uniforms;
+    u.uTime.value = clock.elapsedTime;
     u.uBeat.value = live.current.beat;
     u.uXray.value = live.current.xray;
     const k = 1 - Math.exp(-dt * 4);
     u.uGlow.value.forEach((g, i) => {
-      g.set(critical.r, critical.g, critical.b, THREE.MathUtils.lerp(g.w, targets[i], k));
+      g.set(ischemicDeficit.r, ischemicDeficit.g, ischemicDeficit.b, THREE.MathUtils.lerp(g.w, targets[i], k));
     });
     const transparent = live.current.xray > 0.02;
     model.materials.forEach((m) => {
@@ -146,17 +154,7 @@ function ProceduralHeart({ tint, dim = false }: { tint: string; dim?: boolean })
 }
 
 function LoadingHeart({ tint }: { tint: string }) {
-  const { progress } = useProgress();
-  return (
-    <>
-      <ProceduralHeart tint={tint} dim />
-      <Html center zIndexRange={[25, 20]}>
-        <div className="px-3 py-1.5 rounded-full bg-black/70 border border-white/10 text-[11px] text-white/80 whitespace-nowrap backdrop-blur-md" id="heart-loading">
-          Loading anatomical model… {progress.toFixed(0)}%
-        </div>
-      </Html>
-    </>
-  );
+  return <ProceduralHeart tint={tint} dim />;
 }
 
 class ModelBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
@@ -175,18 +173,35 @@ class ModelBoundary extends Component<{ fallback: ReactNode; children: ReactNode
 // ---------------------------------------------------------------------------------------------
 // Coronary tree: surface-hugging tubes with animated flow
 // ---------------------------------------------------------------------------------------------
-function VesselTube({ curve, radius, a, lesionU, highlighted, live }: { curve: THREE.Curve<THREE.Vector3>; radius: number; a: VesselAssessment; lesionU: number | null; highlighted: boolean; live: React.RefObject<Live> }) {
-  const geo = useMemo(() => new THREE.TubeGeometry(curve, 96, radius, 10, false), [curve, radius]);
+function VesselTube({
+  curve,
+  radius,
+  a,
+  lesionU,
+  highlighted,
+  live,
+}: {
+  curve: THREE.Curve<THREE.Vector3>;
+  radius: number;
+  a: VesselAssessment;
+  lesionU: number | null;
+  highlighted: boolean;
+  live: React.RefObject<Live>;
+}) {
+  const geo = useMemo(
+    () => createPinchedTubeGeometry(curve, 96, radius, 12, lesionU, a.stenosis),
+    [curve, radius, lesionU, a.stenosis],
+  );
   const mat = useMemo(() => createVesselMaterial(), []);
-  useEffect(() => () => { geo.dispose(); }, [geo]);
-  useEffect(() => () => { mat.dispose(); }, [mat]);
+  useEffect(() => () => geo.dispose(), [geo]);
+  useEffect(() => () => mat.dispose(), [mat]);
 
   useEffect(() => {
     const u = mat.uniforms;
     u.uColor.value.set(STATUS_COLOR[a.status]);
     u.uSpeed.value = 0.08 + 0.62 * (1 - a.flowReduction / 100);
     u.uLesionU.value = lesionU !== null && a.status !== "patent" ? lesionU : 2;
-    u.uDownstream.value = a.status === "critical" ? Math.max(0.3, 1 - a.flowReduction / 100) : 1;
+    u.uDownstream.value = a.status === "critical" ? Math.max(0.28, 1 - a.flowReduction / 100) : 1;
   }, [mat, a, lesionU]);
 
   useFrame(({ clock }, dt) => {
@@ -197,33 +212,68 @@ function VesselTube({ curve, radius, a, lesionU, highlighted, live }: { curve: T
     mat.depthTest = live.current.xray < 0.5;
   });
 
-  return <mesh geometry={geo} material={mat} renderOrder={5} />;
+  return (
+    <group>
+      <mesh geometry={geo} material={mat} renderOrder={5} />
+      {lesionU !== null && a.stenosis >= 50 && (
+        <PlaqueCuff curve={curve} lesionU={lesionU} radius={radius} />
+      )}
+    </group>
+  );
 }
 
 function CoronaryTree({ anatomy, assessments, highlight, live }: { anatomy: Anatomy; assessments: VesselAssessment[]; highlight: VesselId | null; live: React.RefObject<Live> }) {
   const byId = useMemo(() => Object.fromEntries(assessments.map((a) => [a.id, a])) as Record<VesselId, VesselAssessment>, [assessments]);
+  const safeAssessment = (id: VesselId): VesselAssessment =>
+    byId[id] ?? {
+      id,
+      name: id,
+      territory: "",
+      wall: "",
+      leads: [],
+      stenosis: 0,
+      status: "patent",
+      source: "model",
+      ffr: 1,
+      flowReduction: 0,
+      myocardiumAtRisk: 25,
+    };
+
   return (
     <group>
       {VESSEL_IDS.map((id) => (
-        <VesselTube key={id} curve={anatomy.vessels[id].curve} radius={id === "LM" ? 0.022 : 0.017} a={byId[id]} lesionU={anatomy.vessels[id].lesionU} highlighted={highlight === id} live={live} />
+        <VesselTube key={id} curve={anatomy.vessels[id].curve} radius={id === "LM" ? 0.022 : 0.017} a={safeAssessment(id)} lesionU={anatomy.vessels[id].lesionU} highlighted={highlight === id} live={live} />
       ))}
       {anatomy.branches.map((b, i) => (
-        <VesselTube key={i} curve={b.curve} radius={0.01} a={byId[b.parent]} lesionU={null} highlighted={highlight === b.parent} live={live} />
+        <VesselTube key={i} curve={b.curve} radius={0.01} a={safeAssessment(b.parent)} lesionU={null} highlighted={highlight === b.parent} live={live} />
       ))}
     </group>
   );
 }
 
 // ---------------------------------------------------------------------------------------------
-// HTML spatial pins
+// HTML spatial pins (permanently mounted with stable keys to avoid React 19 root unmount race)
 // ---------------------------------------------------------------------------------------------
-function VesselPin({ a, pos, normal, selected, onSelect, live }: { a: VesselAssessment; pos: THREE.Vector3; normal: THREE.Vector3; selected: boolean; onSelect: (id: VesselId) => void; live: React.RefObject<Live> }) {
+interface VesselPinProps {
+  id: VesselId;
+  portal?: React.RefObject<HTMLElement>;
+  a?: VesselAssessment;
+  pos: THREE.Vector3;
+  normal: THREE.Vector3;
+  selected: boolean;
+  onSelect: (id: VesselId) => void;
+  live: React.RefObject<Live>;
+}
+
+function VesselPin({ id, portal, a, pos, normal, selected, onSelect, live }: VesselPinProps) {
   const group = useRef<THREE.Group>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const { camera } = useThree();
   const tmp = useMemo(() => ({ w: new THREE.Vector3(), d: new THREE.Vector3() }), []);
-  const color = STATUS_COLOR[a.status];
+  const color = a ? STATUS_COLOR[a.status] : "#ffffff";
+  const stenosis = a ? a.stenosis : 0;
+  const isCritical = a ? a.status === "critical" : false;
 
   // Native listener: stop pointerdown reaching the orbit controls (React's delegated stopPropagation is too late).
   useEffect(() => {
@@ -236,42 +286,59 @@ function VesselPin({ a, pos, normal, selected, onSelect, live }: { a: VesselAsse
 
   useFrame(() => {
     if (!group.current || !wrap.current) return;
+    group.current.position.copy(pos);
     group.current.getWorldPosition(tmp.w);
     tmp.d.copy(camera.position).sub(tmp.w).normalize();
     const facing = THREE.MathUtils.smoothstep(normal.dot(tmp.d), -0.35, 0.2);
     const vis = Math.max(facing, live.current.xray, selected ? 1 : 0);
-    wrap.current.style.opacity = (0.2 + 0.8 * vis).toFixed(3);
-    wrap.current.style.pointerEvents = "auto";
+    const active = Boolean(a);
+    const opacityVal = active ? 0.2 + 0.8 * vis : 0;
+    const scaleVal = active ? (selected ? 1.1 : 1.0) : 0.001;
+    wrap.current.style.opacity = opacityVal.toFixed(3);
+    wrap.current.style.transform = `translate(-50%, calc(-100% + 7px)) scale(${scaleVal})`;
+    wrap.current.style.pointerEvents = active && vis > 0.35 ? "auto" : "none";
+    wrap.current.style.visibility = active && opacityVal > 0.01 ? "visible" : "hidden";
     wrap.current.style.filter = vis < 0.35 ? "grayscale(0.6) opacity(0.7)" : "none";
   });
 
   return (
     <group ref={group} position={pos}>
-      <Html zIndexRange={[20, 10]} style={{ pointerEvents: "none" }}>
-        <div ref={wrap} className="flex flex-col items-center select-none" style={{ transform: "translate(-50%, calc(-100% + 7px))", transition: "opacity 120ms linear" }}>
+      <Html portal={portal} zIndexRange={[20, 10]} style={{ pointerEvents: "none" }}>
+        <div
+          ref={wrap}
+          className="flex flex-col items-center select-none"
+          style={{ transform: "translate(-50%, calc(-100% + 7px))", transition: "opacity 120ms linear, transform 150ms ease-out" }}
+        >
           <button
             ref={btn}
             type="button"
-            id={`vessel-pin-${a.id}`}
-            data-status={a.status}
-            data-stenosis={a.stenosis}
-            aria-label={`${a.name}: ${a.stenosis}% stenosis, ${a.status}`}
+            id={`vessel-pin-${id}`}
+            data-status={a?.status ?? "patent"}
+            data-stenosis={stenosis}
+            aria-label={`${a?.name ?? id}: ${stenosis}% stenosis, ${a?.status ?? "patent"}`}
             aria-pressed={selected}
             onClick={(e) => {
               e.stopPropagation();
-              onSelect(a.id);
+              onSelect(id);
             }}
             onPointerDown={(e) => e.stopPropagation()}
             className={`pointer-events-auto flex items-center gap-1.5 rounded-full border px-2 py-[3px] text-[11px] font-semibold whitespace-nowrap backdrop-blur-md transition-all duration-200 hover:scale-110 cursor-pointer ${selected ? "scale-110 ring-2 ring-white/60" : ""}`}
-            style={{ borderColor: `${color}${selected ? "ff" : "aa"}`, background: "rgba(7,9,20,0.85)", boxShadow: `0 0 ${selected ? 22 : 12}px ${color}${selected ? "88" : "44"}` }}
+            style={{
+              borderColor: `${color}${selected ? "ff" : "aa"}`,
+              background: "rgba(7,9,20,0.85)",
+              boxShadow: `0 0 ${selected ? 22 : 12}px ${color}${selected ? "88" : "44"}`,
+            }}
           >
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
-            <span className="text-white tracking-wide font-bold">{a.id}</span>
-            <span className="font-mono font-bold" style={{ color }}>{a.stenosis}%</span>
+            <span className="text-white tracking-wide font-bold">{id}</span>
+            <span className="font-mono font-bold" style={{ color }}>{stenosis}%</span>
           </button>
           <span className="w-px h-3.5" style={{ background: `linear-gradient(${color}, ${color}22)` }} />
           <span className="relative w-3.5 h-3.5">
-            {a.status === "critical" && <span className="absolute inset-0 rounded-full animate-ping" style={{ background: color, opacity: 0.6 }} />}
+            <span
+              className={`absolute inset-0 rounded-full animate-ping transition-opacity duration-300 ${isCritical ? "opacity-60" : "opacity-0 pointer-events-none"}`}
+              style={{ background: color }}
+            />
             <span className="absolute inset-[2px] rounded-full ring-2 ring-white/80" style={{ background: color }} />
           </span>
         </div>
@@ -374,7 +441,7 @@ function CameraRig({ view, nonce, anatomy }: { view: ViewId; nonce: number; anat
 // ---------------------------------------------------------------------------------------------
 // Scene root
 // ---------------------------------------------------------------------------------------------
-export default function HeartScene({ assessments, bpm, tint, xray, view, viewNonce, highlight, onSelect, onAnatomyReady }: SceneProps) {
+export default function HeartScene({ portal, assessments, bpm, tint, xray, view, viewNonce, highlight, onSelect, onAnatomyReady }: SceneProps) {
   const live = useRef<Live>({ beat: 0, xray: 0 });
   const anatomyRef = useRef<Anatomy>(FALLBACK_ANATOMY);
   const [anatomy, setAnatomyState] = useState<Anatomy>(FALLBACK_ANATOMY);
@@ -413,8 +480,18 @@ export default function HeartScene({ assessments, bpm, tint, xray, view, viewNon
           </Suspense>
         </ModelBoundary>
         <CoronaryTree anatomy={anatomy} assessments={assessments} highlight={highlight} live={live} />
-        {VESSEL_IDS.map((id) => (
-          <VesselPin key={id} a={byId[id]} pos={anatomy.vessels[id].pin} normal={anatomy.vessels[id].pinNormal} selected={highlight === id} onSelect={onSelect} live={live} />
+        {FIXED_VESSEL_IDS.map((id) => (
+          <VesselPin
+            key={`vessel-pin-${id}`}
+            id={id}
+            portal={portal}
+            a={byId[id]}
+            pos={anatomy.vessels[id]?.pin ?? FALLBACK_ANATOMY.vessels[id].pin}
+            normal={anatomy.vessels[id]?.pinNormal ?? FALLBACK_ANATOMY.vessels[id].pinNormal}
+            selected={highlight === id}
+            onSelect={onSelect}
+            live={live}
+          />
         ))}
       </HeartRig>
       <Platform tint={tint} />

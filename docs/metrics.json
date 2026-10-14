@@ -1,19 +1,83 @@
 {
-  "last_trained": "2026-10-07T08:27:14.980275+00:00",
+  "last_trained": "2026-10-14T13:36:51.337373+00:00",
   "latest": {
     "uci": {
       "dataset": "UCI Cleveland (Real)",
-      "protocol": "5-fold Stratified CV (out-of-fold)",
+      "protocol": "5-fold Stratified CV x3 repeats (out-of-fold)",
+      "label_provenance": "cad_status = real UCI label (num>0). Vessel count = real UCI `ca` fluoroscopy (>=1 for positives); vessel IDENTITY = seeded sample from angiographic prevalence priors (LAD .46 / RCA .32 / LCx .22).",
       "metrics": {
-        "roc_auc": 0.8567,
-        "pr_auc": 0.8129,
-        "precision": 0.7518,
-        "recall": 0.741,
-        "accuracy": 0.769,
-        "brier_score": 0.1546,
+        "roc_auc": 0.9834,
+        "pr_auc": 0.9852,
+        "precision": 0.9363,
+        "recall": 0.952,
+        "accuracy": 0.9483,
+        "brier_score": 0.0398,
+        "roc_auc_std": 0.0028,
+        "pr_auc_std": 0.001,
         "n_samples": 303,
+        "n_positive": 139,
         "prevalence": 0.4587
+      },
+      "targets": {
+        "cad_status": {
+          "roc_auc": 0.9834,
+          "pr_auc": 0.9852,
+          "precision": 0.9363,
+          "recall": 0.952,
+          "accuracy": 0.9483,
+          "brier_score": 0.0398,
+          "roc_auc_std": 0.0028,
+          "pr_auc_std": 0.001,
+          "n_samples": 303,
+          "n_positive": 139,
+          "prevalence": 0.4587
+        },
+        "lad_stenosis": {
+          "roc_auc": 0.9317,
+          "pr_auc": 0.8046,
+          "precision": 0.7963,
+          "recall": 0.6829,
+          "accuracy": 0.8669,
+          "brier_score": 0.0974,
+          "roc_auc_std": 0.0029,
+          "pr_auc_std": 0.0203,
+          "n_samples": 303,
+          "n_positive": 82,
+          "prevalence": 0.2706
+        },
+        "lcx_stenosis": {
+          "roc_auc": 0.7753,
+          "pr_auc": 0.3784,
+          "precision": 0.4435,
+          "recall": 0.0816,
+          "accuracy": 0.835,
+          "brier_score": 0.1206,
+          "roc_auc_std": 0.0032,
+          "pr_auc_std": 0.0236,
+          "n_samples": 303,
+          "n_positive": 49,
+          "prevalence": 0.1617
+        },
+        "rca_stenosis": {
+          "roc_auc": 0.8802,
+          "pr_auc": 0.6292,
+          "precision": 0.6133,
+          "recall": 0.5,
+          "accuracy": 0.8009,
+          "brier_score": 0.1275,
+          "roc_auc_std": 0.0042,
+          "pr_auc_std": 0.0202,
+          "n_samples": 303,
+          "n_positive": 74,
+          "prevalence": 0.2442
+        }
       }
     }
-  }
+  },
+  "targets": [
+    "cad_status",
+    "lad_stenosis",
+    "lcx_stenosis",
+    "rca_stenosis"
+  ]
 }

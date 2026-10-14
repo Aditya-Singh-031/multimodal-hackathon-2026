@@ -3,7 +3,7 @@ import type { Patient, PredictRequest, Prediction, Simulation } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-async function http<T>(path: string, init?: RequestInit, timeoutMs = 15000): Promise<T> {
+async function http<T>(path: string, init?: RequestInit, timeoutMs = 2500): Promise<T> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
@@ -20,7 +20,7 @@ async function http<T>(path: string, init?: RequestInit, timeoutMs = 15000): Pro
 /** Every call degrades to the offline model; `offline` tells the UI to show a badge. */
 export async function getPatients(): Promise<{ data: Patient[]; offline: boolean }> {
   try {
-    const data = await http<Patient[]>("/api/patients", undefined, 5000);
+    const data = await http<Patient[]>("/api/patients", undefined, 1500);
     if (!data.length) throw new Error("empty");
     const normalized = data.map((p) => ({ ...p, features: p.features ?? p.request.features }));
     return { data: normalized, offline: false };

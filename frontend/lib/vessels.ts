@@ -8,7 +8,7 @@
  *
  * Physiology estimates (FFR, flow reduction) are coarse, illustrative approximations for decision support.
  */
-import type { Patient, Prediction, VesselAssessment, VesselId, VesselStatus } from "./types";
+import type { Patient, Prediction, VesselAssessment, VesselId, VesselPrediction, VesselStatus } from "./types";
 
 export const VESSEL_IDS: VesselId[] = ["LAD", "LCx", "RCA", "LM"];
 
@@ -88,6 +88,12 @@ const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
 /** Coarse pressure-derived FFR proxy: ~1.0 below 30%, ~0.8 near 60%, steep fall beyond 70%. */
 export const estimateFfr = (stenosis: number) => +clamp(1 - 0.9 * Math.pow(stenosis / 100, 3), 0.2, 1).toFixed(2);
 
+/** Cross-sectional lumen area reduction by circular geometry: Area % = (1 - (1 - d)^2) * 100 */
+export const estimateLumenAreaReduction = (stenosis: number): number => {
+  const d = clamp(stenosis, 0, 99) / 100;
+  return Math.round((1 - Math.pow(1 - d, 2)) * 100);
+};
+
 function parseNarrative(notes: string | null | undefined, id: VesselId): number | null {
   if (!notes) return null;
   const alias = id === "LM" ? "(?:LM|left main)" : id === "LCx" ? "(?:LCx|circumflex)" : id;
@@ -96,10 +102,44 @@ function parseNarrative(notes: string | null | undefined, id: VesselId): number 
   return m ? clamp(+m[1], 0, 99) : null;
 }
 
-export function assessVessels(patient: Patient, prediction: Pick<Prediction, "risk"> | null): VesselAssessment[] {
+/** Convert the backend's per-artery ML output (fusion of tabular + ECG territory + note territory) to a render model. */
+export function assessFromModel(preds: VesselPrediction[]): VesselAssessment[] {
+  const byId = new Map(preds.map((p) => [p.id, p]));
+  return VESSEL_IDS.flatMap((id) => {
+    const p = byId.get(id);
+    if (!p) return [];
+    const meta = VESSEL_META[id];
+    const stenosis = Math.round(clamp(p.stenosis_pct, 0, 99));
+    const ffr = p.ffr_proxy;
+    return [{
+      id,
+      name: p.name || meta.name,
+      territory: p.territory || meta.territory,
+      wall: meta.wall,
+      leads: p.ecg_leads?.length ? p.ecg_leads : meta.leads,
+      stenosis,
+      status: p.status,
+      source: "ml-fusion" as const,
+      stenosisProb: p.stenosis_prob,
+      topShap: p.top_shap ?? null,
+      derived: p.derived,
+      ffr,
+      flowReduction: Math.round((1 - ffr) * 100),
+      lumenAreaReduction: estimateLumenAreaReduction(stenosis),
+      isHemodynamicallySignificant: ffr <= 0.8,
+      myocardiumAtRisk: meta.myocardiumAtRisk,
+    }];
+  });
+}
+
+export function assessVessels(patient: Patient, prediction: Pick<Prediction, "risk" | "vessels"> | null): VesselAssessment[] {
+  if (prediction?.vessels?.length) {
+    const ml = assessFromModel(prediction.vessels);
+    if (ml.length === VESSEL_IDS.length) return ml;
+  }
   const risk = clamp(prediction?.risk ?? 0, 0, 1);
-  const listed = new Set(patient.vessels ?? []);
-  const notes = patient.request.notes ?? "";
+  const listed = new Set(patient?.vessels ?? []);
+  const notes = patient?.request?.notes ?? "";
   const severe = /severe|multivessel|3-vessel|three-vessel/i.test(notes);
 
   return VESSEL_IDS.map((id) => {
@@ -129,6 +169,7 @@ export function assessVessels(patient: Patient, prediction: Pick<Prediction, "ri
 
     stenosis = Math.round(clamp(stenosis, 0, 99));
     const ffr = estimateFfr(stenosis);
+    const lumenAreaReduction = estimateLumenAreaReduction(stenosis);
     return {
       id,
       name: meta.name,
@@ -140,6 +181,8 @@ export function assessVessels(patient: Patient, prediction: Pick<Prediction, "ri
       source,
       ffr,
       flowReduction: Math.round((1 - ffr) * 100),
+      lumenAreaReduction,
+      isHemodynamicallySignificant: ffr <= 0.80,
       myocardiumAtRisk: meta.myocardiumAtRisk,
     };
   });

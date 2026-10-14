@@ -40,6 +40,44 @@ def synth_ecg(hr: float, abnormal: float, seconds: int = 8) -> np.ndarray:
     return (sig + RNG.normal(0, 0.02, n)).astype(np.float32)
 
 
+# Relative R amplitude / polarity per lead (lead II == the single-lead strip used elsewhere)
+LEAD_SCALE = {"I": 0.7, "II": 1.0, "III": 0.5, "aVR": -0.8, "aVL": 0.5, "aVF": 0.8,
+              "V1": 0.4, "V2": 0.6, "V3": 0.8, "V4": 1.0, "V5": 1.0, "V6": 0.9}
+TERRITORY_LEADS = {"LAD": ["V1", "V2", "V3", "V4"], "LCx": ["I", "aVL", "V5", "V6"], "RCA": ["II", "III", "aVF"]}
+
+
+def synth_ecg_12(hr: float, abnormal: float, vessels: list[str] | None = None, seconds: int = 6) -> dict[str, np.ndarray]:
+    """12-lead pseudo-ECG sharing one set of beat times. Leads facing a diseased vessel's territory show ST depression
+    and T-wave flattening; global `abnormal` adds mild diffuse ST depression; left-main disease adds aVR ST elevation."""
+    vessels = vessels or []
+    n = FS * seconds
+    t = np.arange(n) / FS
+    rr = 60.0 / hr
+    beats, beat = [], 0.3
+    while beat < seconds:
+        beats.append(beat + RNG.normal(0, 0.01 + 0.06 * abnormal))
+        beat += rr * (1 + RNG.normal(0, 0.02 + 0.08 * abnormal))
+    sev = {lead: 0.0 for lead in LEAD_SCALE}
+    for v, leads in TERRITORY_LEADS.items():
+        if v in vessels:
+            for lead in leads:
+                sev[lead] = float(np.clip(RNG.normal(0.9, 0.05), 0, 1))
+    lm = "LM" in vessels
+    out = {}
+    for lead, sc in LEAD_SCALE.items():
+        sig = np.zeros(n)
+        st_drop = 0.15 * abnormal + 0.18 * sev[lead] + (0.1 if lm and lead != "aVR" else 0.0)
+        st_elev = 0.1 if (lm and lead == "aVR") else 0.0
+        t_amp = (0.3 - 0.45 * sev[lead] - 0.3 * abnormal) * sc
+        for c in beats:
+            for amp, off, w in [(0.12, -0.2, 0.025), (-0.12, -0.04, 0.012), (1.0, 0.0, 0.012), (-0.2, 0.035, 0.012)]:
+                sig += amp * sc * np.exp(-((t - (c + off)) ** 2) / (2 * w ** 2))
+            sig += t_amp * np.exp(-((t - (c + 0.25)) ** 2) / (2 * 0.05 ** 2))
+            sig += (st_elev - st_drop) * np.exp(-((t - (c + 0.12)) ** 2) / (2 * 0.04 ** 2))
+        out[lead] = (sig + RNG.normal(0, 0.02, n)).astype(np.float32)
+    return out
+
+
 def make_note(row) -> str:
     parts = []
     if row.chest_pain_type >= 2:
@@ -76,9 +114,17 @@ def generate(n: int) -> pd.DataFrame:
              + 0.8 * smoker + 0.7 * diabetic + 0.03 * (bmi - 25) + 0.35 * cp + 0.7 * ex_ang)
     p = 1 / (1 + np.exp(-logit))
     label = (RNG.random(n) < p).astype(int)
+    lvh = (RNG.random(n) < (0.05 + 0.18 * (sbp > 150))).astype(int)
+    st_elev = (RNG.random(n) < (0.03 + 0.35 * p * (cp >= 2))).astype(int)
+    t_inv = (RNG.random(n) < (0.05 + 0.35 * p)).astype(int)
+    rwma = np.clip(np.round(p * 3.5 + RNG.normal(0, 0.4, n)), 0, 4).astype(int)
+    enzymes = (RNG.random(n) < (0.02 + 0.25 * p * (cp == 3))).astype(int)
     df = pd.DataFrame(dict(age=age, sex=sex, systolic_bp=sbp.round(0), cholesterol=chol.round(0),
                            smoker=smoker, diabetic=diabetic, bmi=bmi.round(1), resting_hr=hr.round(0),
-                           chest_pain_type=cp, exercise_angina=ex_ang, risk_latent=p, label=label))
+                           chest_pain_type=cp, exercise_angina=ex_ang,
+                           st_elevation=st_elev, t_inversion=t_inv, lvh=lvh, rwma=rwma,
+                           cardiac_enzymes_elevated=enzymes,
+                           risk_latent=p, label=label))
     df.insert(0, "id", [f"P{i:04d}" for i in range(n)])
     return df
 
@@ -98,7 +144,7 @@ def main() -> None:
 
     # Curated demo patients: verified against the real fusion pipeline (see demo_cohort.py)
     from demo_cohort import build
-    patients = build(synth_ecg, FS, OUT)
+    patients = build(synth_ecg, FS, OUT, synth_ecg_12)
     json.dump(patients, open(OUT / "patients.json", "w"))
     print(f"Wrote {n} patients, {len(patients)} demo patients -> {OUT}")
 

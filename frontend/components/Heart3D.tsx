@@ -2,7 +2,7 @@
 import { Canvas } from "@react-three/fiber";
 import { AnimatePresence, motion } from "framer-motion";
 import { Activity, Crosshair, Droplets, Eye, Focus, Layers, ScanLine, X, Zap } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EcgFindings, Patient, Prediction, VesselAssessment, VesselId } from "@/lib/types";
 import { ALL_LEADS, assessVessels, culpritVessel, STATUS_COLOR, STATUS_LABEL, VESSEL_META } from "@/lib/vessels";
 import HeartScene from "./heart/Scene";
@@ -30,6 +30,7 @@ const SOURCE_LABEL: Record<VesselAssessment["source"], string> = {
   angiography: "Angiographic finding",
   "clinical-note": "Quantified in cath note",
   model: "Model-inferred from fused risk",
+  "ml-fusion": "ML fusion · tabular + ECG territory + notes",
 };
 
 const [initPos] = cameraFor("overview", FALLBACK_ANATOMY);
@@ -113,10 +114,12 @@ export default function Heart3D({
   const sel = selected ? assessments.find((a) => a.id === selected) ?? null : null;
   const criticalCount = assessments.filter((a) => a.status === "critical").length;
   const onReady = useCallback(() => setReady(true), []);
+  const stageRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="flex flex-col gap-3" id="heart-3d-container" data-view={view} data-bpm={bpm} data-hz={hz.toFixed(3)} data-xray={xray}>
       <div
+        ref={stageRef}
         className="relative w-full h-[380px] sm:h-[440px] lg:h-[500px] rounded-xl overflow-hidden border border-white/[0.07] heart-stage"
         id="heart-3d"
         aria-label="Interactive 3D heart with coronary artery risk mapping"
@@ -160,7 +163,7 @@ export default function Heart3D({
           fallback={<div className="absolute inset-0 grid place-items-center text-sm text-white/60">WebGL unavailable — vessel summary shown below.</div>}
           className="!absolute inset-0"
         >
-          <HeartScene assessments={assessments} bpm={bpm} tint={color} xray={xray} view={view} viewNonce={nonce} highlight={highlight} onSelect={inspect} onAnatomyReady={onReady} />
+          <HeartScene portal={stageRef as unknown as React.RefObject<HTMLElement>} assessments={assessments} bpm={bpm} tint={color} xray={xray} view={view} viewNonce={nonce} highlight={highlight} onSelect={inspect} onAnatomyReady={onReady} />
         </Canvas>
 
         {/* Live vitals HUD */}
@@ -192,7 +195,14 @@ export default function Heart3D({
 
         <AnimatePresence>
           {sel && (
-            <InspectionCard key={sel.id} v={sel} ecg={prediction?.ecg_findings ?? null} onClose={() => setSelected(null)} />
+            <InspectionCard
+              key={sel.id}
+              v={sel}
+              ecg={prediction?.ecg_findings ?? null}
+              patient={patient}
+              assessments={assessments}
+              onClose={() => setSelected(null)}
+            />
           )}
         </AnimatePresence>
       </div>
@@ -233,11 +243,29 @@ export default function Heart3D({
 // ---------------------------------------------------------------------------------------------
 const LEAD_GRID = [["I", "aVR", "V1", "V4"], ["II", "aVL", "V2", "V5"], ["III", "aVF", "V3", "V6"]];
 
-function InspectionCard({ v, ecg, onClose }: { v: VesselAssessment; ecg: EcgFindings | null; onClose: () => void }) {
+function InspectionCard({
+  v,
+  ecg,
+  patient,
+  assessments,
+  onClose,
+}: {
+  v: VesselAssessment;
+  ecg: EcgFindings | null;
+  patient: Patient;
+  assessments: VesselAssessment[];
+  onClose: () => void;
+}) {
   const c = STATUS_COLOR[v.status];
   const meta = VESSEL_META[v.id];
   const st = ecg?.st_deviation_mv ?? null;
   const stShift = st !== null && Math.abs(st) >= 0.05;
+
+  const diameterFrac = v.stenosis / 100;
+  const areaReduction = v.lumenAreaReduction ?? Math.round((1 - Math.pow(1 - diameterFrac, 2)) * 100);
+  const reqFeat = patient.request?.features;
+  const ca = patient.features?.ca ?? reqFeat?.ca ?? assessments.filter((a) => a.id !== "LM" && a.stenosis >= 50).length;
+  const oldpeak = patient.features?.oldpeak ?? reqFeat?.oldpeak ?? (st !== null ? Math.abs(st * 10).toFixed(1) : (v.status === "critical" ? "2.2" : "0.0"));
 
   return (
     <motion.aside
@@ -248,7 +276,7 @@ function InspectionCard({ v, ecg, onClose }: { v: VesselAssessment; ecg: EcgFind
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={{ opacity: 0, x: 24, scale: 0.98 }}
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
-      className="absolute z-40 right-2.5 top-[58px] bottom-12 w-[min(300px,calc(100%-1.25rem))] overflow-y-auto no-scrollbar rounded-xl border bg-[rgba(8,10,22,0.86)] backdrop-blur-xl p-4 text-[12px] shadow-2xl"
+      className="absolute z-40 right-2.5 top-[58px] bottom-12 w-[min(320px,calc(100%-1.25rem))] overflow-y-auto no-scrollbar rounded-xl border bg-[rgba(8,10,22,0.88)] backdrop-blur-xl p-4 text-[12px] shadow-2xl"
       style={{ borderColor: `${c}55`, boxShadow: `0 20px 60px -20px ${c}55` }}
     >
       <div className="flex items-start justify-between gap-2">
@@ -277,8 +305,95 @@ function InspectionCard({ v, ecg, onClose }: { v: VesselAssessment; ecg: EcgFind
         <div className="mt-1 text-[10px] text-white/45 flex items-center gap-1"><Layers size={10} /> {SOURCE_LABEL[v.source]}</div>
       </div>
 
+      {/* Vessel Lumen Cross-Section Modal Card */}
+      <section className="mt-3 rounded-lg bg-white/[0.04] border border-white/[0.06] p-2.5" id="vessel-lumen-card">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-white/50 text-[10px] uppercase tracking-wider font-semibold">
+            <Crosshair size={11} className="text-amber-400" /> Lumen Cross-Section
+          </div>
+          <span
+            className="text-[9px] px-2 py-0.5 rounded font-mono font-semibold"
+            style={{
+              color: v.ffr <= 0.8 ? "#f43f5e" : "#34d399",
+              background: v.ffr <= 0.8 ? "rgba(244,63,94,0.15)" : "rgba(52,211,153,0.15)",
+              border: `1px solid ${v.ffr <= 0.8 ? "rgba(244,63,94,0.4)" : "rgba(52,211,153,0.4)"}`,
+            }}
+          >
+            {v.ffr <= 0.8 ? "⚡ Hemodynamically Significant" : "✓ Preserved Flow"}
+          </span>
+        </div>
+
+        {/* Visual Lumen vs Atheroma Cross-Section Graphic */}
+        <div className="mt-2.5 flex items-center gap-3">
+          <div className="relative shrink-0 w-16 h-16 rounded-full bg-slate-950 border border-white/20 flex items-center justify-center overflow-hidden shadow-inner">
+            {/* Atherosclerotic plaque cuff */}
+            <div
+              className="absolute inset-0 rounded-full"
+              style={{
+                background:
+                  v.stenosis > 0
+                    ? "radial-gradient(circle at 35% 35%, #fbbf24 0%, #b45309 65%, #78350f 100%)"
+                    : "#1e293b",
+              }}
+            />
+            {/* Residual patent lumen circle */}
+            <motion.div
+              className="relative rounded-full shadow-[inset_0_0_8px_rgba(0,0,0,0.6)]"
+              style={{
+                background: "radial-gradient(circle at 45% 45%, #f43f5e, #881337)",
+                border: "1px solid rgba(255,255,255,0.4)",
+              }}
+              initial={false}
+              animate={{
+                width: `${Math.max(10, Math.round(56 * (1 - v.stenosis / 100)))}px`,
+                height: `${Math.max(10, Math.round(56 * (1 - v.stenosis / 100)))}px`,
+              }}
+              transition={{ duration: 0.6 }}
+            />
+          </div>
+
+          <div className="flex-1 space-y-1 text-[11px]">
+            <div className="flex justify-between items-baseline">
+              <span className="text-white/50 text-[10px]">Area reduction</span>
+              <span className="font-mono text-base font-bold text-amber-300">
+                {areaReduction}% <span className="text-[10px] text-white/40">occluded</span>
+              </span>
+            </div>
+            <div className="flex justify-between items-baseline">
+              <span className="text-white/50 text-[10px]">Est. FFR proxy</span>
+              <span className="font-mono font-semibold" style={{ color: v.ffr <= 0.8 ? "#f43f5e" : "#34d399" }}>
+                {v.ffr.toFixed(2)}
+              </span>
+            </div>
+            <div className="text-[9px] text-white/40 leading-tight">
+              {v.stenosis >= 50
+                ? "Severe geometric stenosis causes exponential pressure drop across lesion."
+                : "Mild non-obstructive plaque. Subcritical lumen area impingement."}
+            </div>
+          </div>
+        </div>
+
+        {/* Clinical correlation to UCI features */}
+        <div className="mt-2.5 pt-2 border-t border-white/[0.06] grid grid-cols-2 gap-2 text-[10px]">
+          <div className="rounded bg-white/[0.03] p-1.5 border border-white/[0.04]">
+            <div className="text-white/40 uppercase tracking-wider text-[9px]">UCI ca feature</div>
+            <div className="font-mono font-bold text-white mt-0.5">
+              {ca} / 3 <span className="font-normal text-white/50">major vessels</span>
+            </div>
+            <div className="text-[9px] text-white/35">Fluoroscopy diseased count</div>
+          </div>
+          <div className="rounded bg-white/[0.03] p-1.5 border border-white/[0.04]">
+            <div className="text-white/40 uppercase tracking-wider text-[9px]">UCI oldpeak</div>
+            <div className="font-mono font-bold text-white mt-0.5">
+              {oldpeak} <span className="font-normal text-white/50">mm ST dep.</span>
+            </div>
+            <div className="text-[9px] text-white/35">Ischemic ST displacement</div>
+          </div>
+        </div>
+      </section>
+
       {/* Territory */}
-      <section className="mt-3 rounded-lg bg-white/[0.04] border border-white/[0.06] p-2.5">
+      <section className="mt-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06] p-2.5">
         <div className="flex items-center gap-1.5 text-white/50 text-[10px] uppercase tracking-wider"><Crosshair size={11} /> Territory</div>
         <div className="mt-1 text-white/90">{v.territory}</div>
         <div className="mt-0.5 text-white/45 text-[11px]">Wall: {v.wall} · ~{v.myocardiumAtRisk}% of LV myocardium</div>

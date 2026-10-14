@@ -13,6 +13,7 @@ export const VESSEL_SLOTS = 4;
 
 export interface SharedPerfusionUniforms {
   [k: string]: THREE.IUniform;
+  uTime: THREE.IUniform<number>;
   uBeat: THREE.IUniform<number>;
   uXray: THREE.IUniform<number>;
   uPts: THREE.IUniform<THREE.Vector3[]>;
@@ -22,31 +23,35 @@ export interface SharedPerfusionUniforms {
 
 export function createPerfusionUniforms(): SharedPerfusionUniforms {
   return {
+    uTime: { value: 0 },
     uBeat: { value: 0 },
     uXray: { value: 0 },
     uPts: { value: Array.from({ length: VESSEL_SLOTS * GLOW_SAMPLES }, () => new THREE.Vector3(99, 99, 99)) },
     uGlow: { value: Array.from({ length: VESSEL_SLOTS }, () => new THREE.Vector4(0, 0, 0, 0)) },
-    uRadius: { value: 0.2 },
+    uRadius: { value: 0.26 },
   };
 }
 
 const SEGS = GLOW_SAMPLES - 1;
 
 const FRAG_HEADER = /* glsl */ `
+uniform float uTime;
 uniform float uBeat;
 uniform float uXray;
 uniform vec3 uPts[${VESSEL_SLOTS * GLOW_SAMPLES}];
 uniform vec4 uGlow[${VESSEL_SLOTS}];
 uniform float uRadius;
 varying vec3 vNormPos;
+
 float cfSegDist(vec3 p, vec3 a, vec3 b) {
   vec3 pa = p - a, ba = b - a;
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
   return length(pa - ba * h);
 }
-vec3 cfPerfusion(out float strength) {
-  vec3 acc = vec3(0.0);
-  strength = 0.0;
+
+vec3 cfPerfusionDeficit(out float maxStrength) {
+  vec3 deficitAcc = vec3(0.0);
+  maxStrength = 0.0;
   for (int v = 0; v < ${VESSEL_SLOTS}; v++) {
     vec4 g = uGlow[v];
     if (g.a <= 0.001) continue;
@@ -54,11 +59,19 @@ vec3 cfPerfusion(out float strength) {
     for (int i = 0; i < ${SEGS}; i++) {
       d = min(d, cfSegDist(vNormPos, uPts[v * ${GLOW_SAMPLES} + i], uPts[v * ${GLOW_SAMPLES} + i + 1]));
     }
+    // Perfusion territory coverage around the coronary tree
     float s = exp(-pow(d / uRadius, 2.0)) * g.a;
-    acc += g.rgb * s;
-    strength = max(strength, s);
+    if (s <= 0.001) continue;
+    
+    // Hypoxic pulse: sluggish, out-of-phase ischemic rhythm
+    float hypoxicPulse = 0.45 + 0.55 * (0.5 + 0.5 * sin(uTime * 2.8 - d * 6.0 + float(v) * 1.57));
+    
+    // Dull dusky purple ischemic tissue coloration
+    vec3 duskyPurple = g.rgb;
+    deficitAcc += duskyPurple * s * hypoxicPulse;
+    maxStrength = max(maxStrength, s);
   }
-  return acc;
+  return deficitAcc;
 }
 `;
 
@@ -79,24 +92,28 @@ export function patchMyocardium(
         "#include <emissivemap_fragment>",
         /* glsl */ `#include <emissivemap_fragment>
         float cfStrength;
-        vec3 cfGlow = cfPerfusion(cfStrength);
-        float cfThrob = 0.45 + 0.55 * uBeat;
-        totalEmissiveRadiance += cfGlow * cfThrob * 2.4;`,
+        vec3 cfDeficit = cfPerfusionDeficit(cfStrength);
+        float cfThrob = 0.4 + 0.6 * uBeat;
+        totalEmissiveRadiance += cfDeficit * (1.8 + 1.2 * cfThrob);`,
       )
       .replace(
         "#include <opaque_fragment>",
         /* glsl */ `#include <opaque_fragment>
         {
+          // Anatomical myocardial territory ischemic discoloration: dull dusky purple
+          vec3 ischemicTissue = vec3(0.24, 0.08, 0.36);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, ischemicTissue, clamp(cfStrength * 0.78, 0.0, 0.85));
+
           vec3 cfView = normalize(vViewPosition);
           float cfFres = pow(1.0 - abs(dot(normalize(normal), cfView)), 2.4);
           vec3 cfRim = vec3(0.42, 0.82, 1.0) * cfFres * 1.7;
-          vec3 cfX = gl_FragColor.rgb * 0.16 + cfRim + cfGlow * cfThrob * 2.0;
+          vec3 cfX = gl_FragColor.rgb * 0.16 + cfRim + cfDeficit * 2.2;
           gl_FragColor.rgb = mix(gl_FragColor.rgb, cfX, uXray);
-          gl_FragColor.a = mix(gl_FragColor.a, clamp(0.04 + cfFres * 0.7 + cfStrength * 0.55, 0.0, 1.0), uXray);
+          gl_FragColor.a = mix(gl_FragColor.a, clamp(0.04 + cfFres * 0.7 + cfStrength * 0.6, 0.0, 1.0), uXray);
         }`,
       );
   };
-  mat.customProgramCacheKey = () => "cardiofusion-perfusion-v1";
+  mat.customProgramCacheKey = () => "cardiofusion-perfusion-v2";
   mat.needsUpdate = true;
 }
 
@@ -124,12 +141,32 @@ export function createVesselMaterial() {
       uniform float uTime, uSpeed, uLesionU, uDownstream, uSelected, uXray;
       varying vec2 vUv;
       void main() {
-        float flow = fract(vUv.x * 6.0 - uTime * uSpeed);
-        float pulse = smoothstep(0.0, 0.12, flow) * (1.0 - smoothstep(0.12, 0.42, flow));
-        float down = vUv.x > uLesionU ? uDownstream : 1.0;
-        float lesion = 1.0 - smoothstep(0.0, 0.035, abs(vUv.x - uLesionU));
-        vec3 c = uColor * (0.5 + 0.95 * pulse) * down + vec3(1.0) * lesion * 0.6;
+        float x = vUv.x;
+        float hasLesion = step(uLesionU, 1.5);
+        float distToLesion = abs(x - uLesionU);
+        
+        // Continuous hemodynamic wave phase:
+        // Normal upstream speed (phase slope ~ 6.0)
+        // Decelerated downstream speed (phase slope ~ 14.0 = slower travel)
+        // High-velocity acceleration through the lesion pinch (jet effect)
+        float trans = smoothstep(-0.04, 0.04, x - uLesionU);
+        float basePhase = mix(6.0 * x, 6.0 * uLesionU + 14.0 * (x - uLesionU), trans);
+        float pinchJet = 0.35 * exp(-pow(distToLesion / 0.045, 2.0));
+        float phase = mix(x * 6.0, basePhase - pinchJet, hasLesion);
+        
+        float flow = fract(phase - uTime * uSpeed);
+        float pulse = smoothstep(0.0, 0.12, flow) * (1.0 - smoothstep(0.12, 0.44, flow));
+        
+        // Downstream post-stenotic perfusion dimming
+        float down = mix(1.0, uDownstream, trans);
+        
+        // Golden/amber plaque calcification marker glow at constriction
+        float plaqueGlow = hasLesion * (1.0 - smoothstep(0.0, 0.035, distToLesion));
+        
+        vec3 c = uColor * (0.42 + 1.15 * pulse) * down;
+        c += vec3(0.98, 0.72, 0.18) * plaqueGlow * 0.95; // golden amber plaque cuff highlight
         c += uColor * uSelected * 0.45;
+        
         float a = mix(0.92, 1.0, uXray);
         gl_FragColor = vec4(c, a);
       }`,

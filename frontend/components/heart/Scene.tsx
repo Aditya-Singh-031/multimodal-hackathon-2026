@@ -27,6 +27,15 @@ export interface SceneProps {
   onAnatomyReady?: () => void;
 }
 
+/**
+ * Recommended WebGL Canvas parameters for 60 FPS on integrated laptop GPUs (iGPU Ready).
+ * Restricts maximum DPR to 1.75 to prevent fill-rate bottlenecks on high-density Retina/4K displays.
+ */
+export const CANVAS_IGPU_PROPS = {
+  dpr: [1, 1.75] as [number, number],
+  gl: { antialias: true, alpha: true, powerPreference: "high-performance" as const },
+};
+
 /** Live values shared between frame loops without triggering React renders. */
 interface Live { beat: number; xray: number; ischemiaMap: number }
 

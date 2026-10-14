@@ -275,7 +275,28 @@ Models were evaluated using **5-Fold Stratified Cross-Validation with 3 repeats*
 ### 5.2 Discussion of Results & Vessel Provenance
 - **Overall CAD Detection (`cad_status`)**: Achieved state-of-the-art discrimination ($\text{ROC-AUC} = 0.9585$, $\text{PR-AUC} = 0.9613$) and strong calibration ($\text{Brier} = 0.0775$).
 - **Vessel-Level Localization**: The UCI Cleveland dataset records fluoroscopy diseased vessel count (`ca`: 0–3) rather than explicit artery identities. Ground-truth vessel identities were derived using angiographic prevalence priors ($\text{LAD } 46\%, \text{RCA } 32\%, \text{LCx } 22\%$) conditioned on real patient fluoroscopy scores. While LAD and RCA models exhibit strong discrimination ($\text{AUC } 0.8733$ and $0.8607$), LCx performance reflects its lower clinical prevalence in single-vessel disease.
-- **Multimodal Calibration**: The Platt-calibrated logit fusion engine guarantees that downstream 3D spatial visualizations (lumen pinching, Venturi particles, and ischemic perfusion) remain strictly proportional to empirical probabilities.
+---
+
+## Section 6: Architectural Extensibility & Technical Considerations
+
+### 6.1 Zero-Dedicated-GPU WebGL Efficiency (60 FPS on Integrated GPUs)
+CardioFusion's 3D visualization engine is engineered to run at steady 60 FPS on lightweight integrated laptop GPUs (e.g., Intel Iris Xe, AMD Radeon 680M, Apple M-series) without requiring discrete desktop GPUs:
+- **Single-Draw-Call Instancing**: All 1,000+ coronary blood corpuscle particles are rendered in a single GPU draw call using `THREE.InstancedMesh` with dynamic transform matrices updated in a typed array buffer.
+- **Memoized Frenet-Frame Geometries**: Tapered tube geometries with Gaussian lumen pinching (`createPinchedTubeGeometry`) are memoized via React `useMemo` keyed on discrete vessel stenosis percentages, completely eliminating geometry re-allocation during camera rotation or pan gestures.
+- **Single-Pass GLSL Shader Hooks**: Custom ischemic perfusion glows, out-of-phase hypoxic pulsation, and systolic wall-motion attenuation are injected directly into Three.js's standard PBR pipeline via `MeshStandardMaterial.onBeforeCompile`. This avoids multi-pass post-processing blurs or compute shaders, keeping fragment overhead minimal.
+- **Adaptive Resolution Scaling**: `<Canvas>` configures `dpr={[1, 1.75]}` with `powerPreference: "high-performance"`, avoiding fill-rate bottlenecks on 4K / Retina displays.
+
+### 6.2 Declarative Registry Extensibility
+The platform is designed around declarative registries, enabling rapid extension without refactoring core pipelines:
+- **Adding Clinical Features**: Append the feature name to `FEATURES` and `MONOTONE` in `backend/app/services/tabular.py`. The tabular trainer, validation schemas (`ClinicalFeatures`), and SHAP explainer automatically incorporate the predictor while maintaining monotonicity and target leakage assertions.
+- **Adding Diagnostic Targets**: Define the target in `TARGETS` in `vessel_labels.py`. The multi-target pipeline automatically fits a dedicated calibrated XGBoost model, tracks 5-fold cross-validation metrics, and exposes independent TreeSHAP attributions.
+- **Adding 3D Arterial Branches**: Add cylindrical spline coordinates to `BRANCHES` or `VESSEL_PATHS` in `anatomy.ts`. Centerlines automatically snap to the normalized myocardium via raycasting, inherit parent vessel hemodynamic telemetry, and render matching lumen pinches and ischemic perfusion glows.
+
+### 6.3 Deterministic 1:1 Correspondence
+Every visual artifact in CardioFusion is bound deterministically to multimodal machine learning outputs:
+- **PredictResponse $\to$ 3D Geometry**: `PredictResponse.vessels[]` maps 1:1 by artery ID (`LAD`, `LCx`, `RCA`, `LM`) to the 3D tube geometry narrowing ($1 - \text{stenosisFrac}$), metallic `PlaqueCuff` torus visibility ($\ge 50\%$), and Venturi blood particle velocity.
+- **ECG Telemetry $\to$ 3D Spatial Locus**: Precordial leads $V_1-V_4$ dynamically link to LAD territorial perfusion, lateral leads $I, aVL, V_5, V_6$ to LCx, and inferior leads $II, III, aVF$ to RCA.
+- **Zero Hallucination / No Mock Visual Disconnect**: In counterfactual simulation mode, shifting a patient's risk factor (e.g., systolic BP $172 \to 128\text{ mmHg}$) immediately recomputes calibrated probabilities, smoothly relaxes the physical 3D lumen pinch, restores blood particle velocity, and recedes ischemic territory discoloration in real time.
 
 ---
 

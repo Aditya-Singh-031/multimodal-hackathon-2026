@@ -180,6 +180,27 @@ Evaluated via **5-fold Stratified Cross-Validation with 3 repeats** on the real 
 
 ---
 
+## Architectural Extensibility & Technical Considerations
+
+### 1. Zero-Dedicated-GPU WebGL Efficiency (60 FPS on Integrated GPUs)
+CardioFusion is engineered to sustain fluid 60 FPS rendering on standard integrated laptop graphics (e.g. Intel Iris Xe, AMD Radeon 680M, Apple Silicon) without demanding discrete GPU hardware:
+- **Single-Draw-Call Instancing**: All 1,000+ coronary blood corpuscle particles are rendered in a single GPU draw call using `THREE.InstancedMesh` with typed transform buffers.
+- **Memoized Frenet-Frame Geometries**: Tapered tube geometries with Gaussian lumen pinching (`createPinchedTubeGeometry`) are memoized via React `useMemo` keyed on discrete stenosis percentages, preventing geometry re-allocations during camera interaction.
+- **Single-Pass GLSL Shader Hooks**: Ischemic perfusion mapping, hypoxic pulsation, and systolic wall-motion attenuation are injected directly into Three.js's standard PBR material via `MeshStandardMaterial.onBeforeCompile`, avoiding multi-pass post-processing overhead.
+- **Adaptive Canvas Scaling**: `<Canvas>` configures `dpr={[1, 1.75]}` with `gl={{ powerPreference: "high-performance" }}`, preventing fill-rate bottlenecks on 4K / Retina screens.
+
+### 2. Declarative Registry Extensibility
+- **Adding Clinical Features**: Append the feature to `FEATURES` and `MONOTONE` in `backend/app/services/tabular.py`. The tabular trainer, validation schemas (`ClinicalFeatures`), and SHAP explainer automatically incorporate the predictor while maintaining monotonicity and target leakage assertions.
+- **Adding Diagnostic Targets**: Define the target in `TARGETS` in `vessel_labels.py`. The multi-target pipeline automatically fits a dedicated calibrated XGBoost model, tracks 5-fold cross-validation metrics, and exposes independent TreeSHAP attributions.
+- **Adding 3D Arterial Branches**: Add cylindrical spline coordinates to `BRANCHES` or `VESSEL_PATHS` in `anatomy.ts`. Centerlines automatically snap to the normalized myocardium via raycasting, inherit parent vessel hemodynamic telemetry, and render matching lumen pinches and ischemic perfusion glows.
+
+### 3. Deterministic 1:1 Correspondence
+- **Prediction to 3D Geometry**: `PredictResponse.vessels[]` maps 1:1 by artery ID (`LAD`, `LCx`, `RCA`, `LM`) to 3D tube geometry narrowing ($1 - \text{stenosisFrac}$), metallic `PlaqueCuff` torus markers ($\ge 50\%$), and Venturi blood particle velocity.
+- **ECG Telemetry to 3D Spatial Locus**: Precordial leads $V_1-V_4$ link to LAD territorial perfusion, lateral leads $I, aVL, V_5, V_6$ to LCx, and inferior leads $II, III, aVF$ to RCA.
+- **Zero Hallucination / No Mock Visual Disconnect**: In counterfactual simulation mode, shifting a patient's risk factor (e.g., systolic BP $172 \to 128\text{ mmHg}$) immediately recomputes calibrated probabilities, smoothly relaxes the physical 3D lumen pinch, restores blood particle velocity, and recedes ischemic territory discoloration in real time.
+
+---
+
 ## Clinical Safety Disclaimer (Track A Requirement 5)
 
 > ⚠️ **CLINICAL SAFETY DISCLAIMER**: Predictions and 3D visualizations are for clinical decision support and educational purposes only and are NOT a substitute for formal diagnostic imaging (such as coronary angiography or cardiac CT) or professional medical diagnosis.

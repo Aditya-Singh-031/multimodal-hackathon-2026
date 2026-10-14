@@ -25,6 +25,12 @@ def test_predict_all_modalities():
     assert r.status_code == 200, r.text
     d = r.json()
     assert 0 <= d["risk"] <= 1 and d["ecg_findings"] and d["notes_entities"] and d["shap"]
+    assert "cad_status" in d
+    assert isinstance(d["cad_status"], bool)
+    assert "vessels" in d and len(d["vessels"]) == 4
+    assert [v["id"] for v in d["vessels"]] == ["LAD", "LCx", "RCA", "LM"]
+    # Check that high risk patient has cad_status True
+    assert d["cad_status"] is True
 
 
 def test_risk_orders_across_patients():
@@ -55,3 +61,25 @@ def test_short_ecg_degrades_gracefully():
     p["ecg"]["signal"] = [0.0] * 10
     r = client.post("/api/predict", json=p)
     assert r.status_code == 200 and r.json()["ecg_findings"] is None
+
+
+def test_clinical_features_boundary():
+    """Verify core ECG/Echo features are accepted as ML inputs and affect prediction."""
+    req = {
+        "features": {
+            "age": 55, "sex": "M", "systolic_bp": 140, "cholesterol": 220,
+            "smoker": False, "diabetic": False, "bmi": 26.0, "resting_hr": 72,
+            "chest_pain_type": 1, "exercise_angina": False,
+            "st_elevation": True, "t_inversion": True, "lvh": True, "rwma": 2,
+            "cardiac_enzymes_elevated": True,
+        }
+    }
+    r = client.post("/api/predict", json=req)
+    assert r.status_code == 200
+    d = r.json()
+    assert d["cad_status"] is True
+    # Verify SHAP includes the new clinical features
+    shap_feats = {s["feature"] for s in d["shap"]}
+    assert "ST elevation" in shap_feats
+    assert "RWMA score" in shap_feats
+    assert "Cardiac enzymes" in shap_feats

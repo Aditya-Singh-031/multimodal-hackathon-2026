@@ -7,7 +7,7 @@ import type { VesselAssessment, VesselId } from "@/lib/types";
 import { STATUS_COLOR, VESSEL_IDS } from "@/lib/vessels";
 import { buildAnatomy, cameraFor, FALLBACK_ANATOMY, GLOW_SAMPLES, type Anatomy, type ViewId } from "./anatomy";
 import { createPerfusionUniforms, createVesselMaterial, patchMyocardium, type SharedPerfusionUniforms } from "./shaders";
-import { createPinchedTubeGeometry, FIXED_VESSEL_IDS, PlaqueCuff } from "./vessels";
+import { createPinchedTubeGeometry, FIXED_VESSEL_IDS, PlaqueCuff, CoronaryFlowParticles } from "./vessels";
 
 export const HEART_URL = "/models/heart.glb";
 useGLTF.preload(HEART_URL);
@@ -18,6 +18,8 @@ export interface SceneProps {
   bpm: number;
   tint: string;
   xray: boolean;
+  ischemiaMap?: boolean;
+  flowParticles?: boolean;
   view: ViewId;
   viewNonce: number;
   highlight: VesselId | null;
@@ -26,7 +28,7 @@ export interface SceneProps {
 }
 
 /** Live values shared between frame loops without triggering React renders. */
-interface Live { beat: number; xray: number }
+interface Live { beat: number; xray: number; ischemiaMap: number }
 
 // ---------------------------------------------------------------------------------------------
 // Model preparation (normalize → clone & patch materials → raycast-snap coronary anatomy). Cached per asset.
@@ -112,6 +114,7 @@ function ModelHeart({ assessments, tint, live, onAnatomy }: { assessments: Vesse
     u.uTime.value = clock.elapsedTime;
     u.uBeat.value = live.current.beat;
     u.uXray.value = live.current.xray;
+    u.uIschemiaMap.value = live.current.ischemiaMap;
     const k = 1 - Math.exp(-dt * 4);
     u.uGlow.value.forEach((g, i) => {
       g.set(ischemicDeficit.r, ischemicDeficit.g, ischemicDeficit.b, THREE.MathUtils.lerp(g.w, targets[i], k));
@@ -171,7 +174,7 @@ class ModelBoundary extends Component<{ fallback: ReactNode; children: ReactNode
 }
 
 // ---------------------------------------------------------------------------------------------
-// Coronary tree: surface-hugging tubes with animated flow
+// Coronary tree: surface-hugging tubes with animated flow and hemodynamic particles
 // ---------------------------------------------------------------------------------------------
 function VesselTube({
   curve,
@@ -180,6 +183,7 @@ function VesselTube({
   lesionU,
   highlighted,
   live,
+  flowParticles = true,
 }: {
   curve: THREE.Curve<THREE.Vector3>;
   radius: number;
@@ -187,6 +191,7 @@ function VesselTube({
   lesionU: number | null;
   highlighted: boolean;
   live: React.RefObject<Live>;
+  flowParticles?: boolean;
 }) {
   const geo = useMemo(
     () => createPinchedTubeGeometry(curve, 96, radius, 12, lesionU, a.stenosis),
@@ -218,11 +223,32 @@ function VesselTube({
       {lesionU !== null && a.stenosis >= 50 && (
         <PlaqueCuff curve={curve} lesionU={lesionU} radius={radius} />
       )}
+      {flowParticles && (
+        <CoronaryFlowParticles
+          curve={curve}
+          a={a}
+          lesionU={lesionU}
+          vesselRadius={radius}
+          count={a.id === "LM" ? 18 : 34}
+        />
+      )}
     </group>
   );
 }
 
-function CoronaryTree({ anatomy, assessments, highlight, live }: { anatomy: Anatomy; assessments: VesselAssessment[]; highlight: VesselId | null; live: React.RefObject<Live> }) {
+function CoronaryTree({
+  anatomy,
+  assessments,
+  highlight,
+  live,
+  flowParticles = true,
+}: {
+  anatomy: Anatomy;
+  assessments: VesselAssessment[];
+  highlight: VesselId | null;
+  live: React.RefObject<Live>;
+  flowParticles?: boolean;
+}) {
   const byId = useMemo(() => Object.fromEntries(assessments.map((a) => [a.id, a])) as Record<VesselId, VesselAssessment>, [assessments]);
   const safeAssessment = (id: VesselId): VesselAssessment =>
     byId[id] ?? {
@@ -242,10 +268,28 @@ function CoronaryTree({ anatomy, assessments, highlight, live }: { anatomy: Anat
   return (
     <group>
       {VESSEL_IDS.map((id) => (
-        <VesselTube key={id} curve={anatomy.vessels[id].curve} radius={id === "LM" ? 0.022 : 0.017} a={safeAssessment(id)} lesionU={anatomy.vessels[id].lesionU} highlighted={highlight === id} live={live} />
+        <VesselTube
+          key={id}
+          curve={anatomy.vessels[id].curve}
+          radius={id === "LM" ? 0.022 : 0.017}
+          a={safeAssessment(id)}
+          lesionU={anatomy.vessels[id].lesionU}
+          highlighted={highlight === id}
+          live={live}
+          flowParticles={flowParticles}
+        />
       ))}
       {anatomy.branches.map((b, i) => (
-        <VesselTube key={i} curve={b.curve} radius={0.01} a={safeAssessment(b.parent)} lesionU={null} highlighted={highlight === b.parent} live={live} />
+        <VesselTube
+          key={i}
+          curve={b.curve}
+          radius={0.01}
+          a={safeAssessment(b.parent)}
+          lesionU={null}
+          highlighted={highlight === b.parent}
+          live={live}
+          flowParticles={flowParticles}
+        />
       ))}
     </group>
   );
@@ -367,19 +411,54 @@ function HeartRig({ bpm, live, children }: { bpm: number; live: React.RefObject<
 }
 
 function Platform({ tint }: { tint: string }) {
-  const ref = useRef<THREE.Group>(null);
-  useFrame((_, dt) => { if (ref.current) ref.current.rotation.z += dt * 0.15; });
+  const outerRef = useRef<THREE.Group>(null);
+  const innerRef = useRef<THREE.Group>(null);
+
+  useFrame((_, dt) => {
+    if (outerRef.current) outerRef.current.rotation.z += dt * 0.18;
+    if (innerRef.current) innerRef.current.rotation.z -= dt * 0.12;
+  });
+
   return (
     <group position={[0, -1.18, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      <group ref={ref}>
+      {/* Outer sweep radar ring */}
+      <group ref={outerRef}>
         <mesh>
-          <ringGeometry args={[0.95, 0.98, 96, 1, 0, Math.PI * 1.6]} />
-          <meshBasicMaterial color="#22d3ee" transparent opacity={0.35} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+          <ringGeometry args={[0.96, 0.99, 96, 1, 0, Math.PI * 1.5]} />
+          <meshBasicMaterial color="#22d3ee" transparent opacity={0.45} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+        <mesh>
+          <ringGeometry args={[1.18, 1.20, 64, 1, 0, Math.PI * 0.8]} />
+          <meshBasicMaterial color="#7c5cff" transparent opacity={0.3} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
         </mesh>
       </group>
+
+      {/* Inner counter-rotating calibration ring */}
+      <group ref={innerRef}>
+        <mesh>
+          <ringGeometry args={[0.62, 0.64, 48, 1, 0, Math.PI * 1.2]} />
+          <meshBasicMaterial color="#38bdf8" transparent opacity={0.35} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      </group>
+
+      {/* Static concentric diagnostic rings */}
       <mesh>
-        <ringGeometry args={[0.6, 1.25, 96]} />
-        <meshBasicMaterial color={tint} transparent opacity={0.07} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+        <ringGeometry args={[0.35, 0.36, 64]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.12} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh>
+        <ringGeometry args={[0.78, 0.79, 64]} />
+        <meshBasicMaterial color="#22d3ee" transparent opacity={0.15} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh>
+        <ringGeometry args={[1.28, 1.30, 96]} />
+        <meshBasicMaterial color="#7c5cff" transparent opacity={0.18} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* Soft ground pedestal glow */}
+      <mesh>
+        <circleGeometry args={[1.35, 64]} />
+        <meshBasicMaterial color={tint} transparent opacity={0.06} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
     </group>
   );
@@ -441,8 +520,21 @@ function CameraRig({ view, nonce, anatomy }: { view: ViewId; nonce: number; anat
 // ---------------------------------------------------------------------------------------------
 // Scene root
 // ---------------------------------------------------------------------------------------------
-export default function HeartScene({ portal, assessments, bpm, tint, xray, view, viewNonce, highlight, onSelect, onAnatomyReady }: SceneProps) {
-  const live = useRef<Live>({ beat: 0, xray: 0 });
+export default function HeartScene({
+  portal,
+  assessments,
+  bpm,
+  tint,
+  xray,
+  ischemiaMap = true,
+  flowParticles = true,
+  view,
+  viewNonce,
+  highlight,
+  onSelect,
+  onAnatomyReady,
+}: SceneProps) {
+  const live = useRef<Live>({ beat: 0, xray: 0, ischemiaMap: 1 });
   const anatomyRef = useRef<Anatomy>(FALLBACK_ANATOMY);
   const [anatomy, setAnatomyState] = useState<Anatomy>(FALLBACK_ANATOMY);
   const byId = useMemo(() => Object.fromEntries(assessments.map((a) => [a.id, a])) as Record<VesselId, VesselAssessment>, [assessments]);
@@ -460,6 +552,8 @@ export default function HeartScene({ portal, assessments, bpm, tint, xray, view,
   useFrame((_, dt) => {
     live.current.xray = THREE.MathUtils.lerp(live.current.xray, xray ? 1 : 0, 1 - Math.exp(-dt * 5));
     if (Math.abs(live.current.xray - (xray ? 1 : 0)) < 0.002) live.current.xray = xray ? 1 : 0;
+    live.current.ischemiaMap = THREE.MathUtils.lerp(live.current.ischemiaMap, ischemiaMap ? 1 : 0, 1 - Math.exp(-dt * 6));
+    if (Math.abs(live.current.ischemiaMap - (ischemiaMap ? 1 : 0)) < 0.002) live.current.ischemiaMap = ischemiaMap ? 1 : 0;
   });
 
   const ready = anatomy !== FALLBACK_ANATOMY;
@@ -479,7 +573,13 @@ export default function HeartScene({ portal, assessments, bpm, tint, xray, view,
             <ModelHeart assessments={assessments} tint={tint} live={live} onAnatomy={onAnatomy} />
           </Suspense>
         </ModelBoundary>
-        <CoronaryTree anatomy={anatomy} assessments={assessments} highlight={highlight} live={live} />
+        <CoronaryTree
+          anatomy={anatomy}
+          assessments={assessments}
+          highlight={highlight}
+          live={live}
+          flowParticles={flowParticles}
+        />
         {FIXED_VESSEL_IDS.map((id) => (
           <VesselPin
             key={`vessel-pin-${id}`}

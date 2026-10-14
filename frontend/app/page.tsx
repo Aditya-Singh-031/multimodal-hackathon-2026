@@ -3,9 +3,9 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
-import { Activity, AlertTriangle, FileText, HeartPulse, RefreshCw, Sparkles, SlidersHorizontal, Stethoscope, WifiOff } from "lucide-react";
+import { Activity, AlertTriangle, FileText, HeartPulse, RefreshCw, RotateCcw, Sparkles, SlidersHorizontal, Stethoscope, WifiOff } from "lucide-react";
 import { getPatients, predict } from "@/lib/api";
-import { TIER_COLOR, type Patient, type Prediction } from "@/lib/types";
+import { TIER_COLOR, type Patient, type Prediction, type Simulation } from "@/lib/types";
 import RiskGauge from "@/components/RiskGauge";
 import ShapChart from "@/components/ShapChart";
 import EcgViewer from "@/components/EcgViewer";
@@ -33,18 +33,25 @@ export default function Home() {
   const [patients, setPatients] = useState<Patient[] | null>(null);
   const [sel, setSel] = useState<Patient | null>(null);
   const [pred, setPred] = useState<Prediction | null>(null);
+  const [sim, setSim] = useState<Simulation | null>(null);
+  const [resetKey, setResetKey] = useState(0);
   const [offline, setOffline] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const run = useCallback(async (p: Patient) => {
-    setSel(p); setLoading(true); setError(null);
+    setSel(p); setLoading(true); setError(null); setSim(null);
     try {
       const { data, offline: off } = await predict(p.request);
       setPred(data); setOffline((o) => o || off);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Prediction failed");
     } finally { setLoading(false); }
+  }, []);
+
+  const handleResetSimulation = useCallback(() => {
+    setSim(null);
+    setResetKey((k) => k + 1);
   }, []);
 
   const boot = useCallback(async () => {
@@ -56,7 +63,9 @@ export default function Home() {
 
   useEffect(() => { boot(); }, [boot]);
 
-  const color = pred ? TIER_COLOR[pred.tier] : "#7c5cff";
+  const activePred = sim?.modified ?? pred;
+  const isSimulating = sim !== null;
+  const color = activePred ? TIER_COLOR[activePred.tier] : "#7c5cff";
   const f = sel?.request.features;
 
   return (
@@ -100,21 +109,71 @@ export default function Home() {
         </div>
       )}
 
+      {/* Live Counterfactual Simulation Banner */}
+      <AnimatePresence>
+        {isSimulating && (
+          <motion.div
+            initial={{ opacity: 0, y: -10, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.98 }}
+            id="simulation-active-banner"
+            className="mb-6 rounded-2xl border border-cyan-400/40 bg-gradient-to-r from-cyan-950/80 via-indigo-950/70 to-slate-900/80 backdrop-blur-xl p-4 shadow-[0_0_30px_rgba(34,211,238,0.25)] flex flex-wrap items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-3">
+              <span className="relative flex h-3.5 w-3.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-cyan-400 shadow-[0_0_12px_#22d3ee]" />
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm tracking-wide text-cyan-200 uppercase">
+                    SIMULATION ACTIVE — LIVE 3D PREVIEW
+                  </span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 font-mono font-bold">
+                    Δ {(sim.delta_risk >= 0 ? "+" : "")}{(sim.delta_risk * 100).toFixed(1)}% Risk
+                  </span>
+                </div>
+                <p className="text-xs text-white/70 mt-0.5">
+                  Live counterfactual prediction active. Morphing 3D coronary geometry, particle flow, and wall motion.
+                </p>
+              </div>
+            </div>
+
+            <button
+              id="sim-reset-btn"
+              type="button"
+              onClick={handleResetSimulation}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-xs font-semibold text-cyan-100 transition-all shadow-md active:scale-95"
+            >
+              <RotateCcw size={13} /> Reset to Baseline
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {loading && !pred && (
         <div className="grid md:grid-cols-3 gap-5">{[0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="skeleton h-64" />)}</div>
       )}
 
       <AnimatePresence mode="wait">
-        {pred && sel && f && (
+        {activePred && sel && f && (
           <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: loading ? 0.5 : 1 }} exit={{ opacity: 0 }}
             className="grid grid-cols-1 lg:grid-cols-3 gap-5 transition-opacity">
             <Card title="Risk assessment" icon={Activity} id="card-risk">
-              <RiskGauge risk={pred.risk} tier={pred.tier} confidence={pred.confidence} />
-              <p className="text-sm text-[var(--muted)] mt-4 leading-relaxed" id="rationale">{pred.rationale}</p>
+              <RiskGauge risk={activePred.risk} tier={activePred.tier} confidence={activePred.confidence} />
+              {isSimulating && (
+                <div className="mt-3 p-2 rounded-lg bg-cyan-950/40 border border-cyan-500/30 text-xs text-cyan-200 flex items-center justify-between">
+                  <span className="text-white/70">Counterfactual Delta</span>
+                  <span className="font-mono font-bold">
+                    {(sim.baseline.risk * 100).toFixed(0)}% → {(sim.modified.risk * 100).toFixed(0)}% (Δ {(sim.delta_risk >= 0 ? "+" : "")}{(sim.delta_risk * 100).toFixed(1)}%)
+                  </span>
+                </div>
+              )}
+              <p className="text-sm text-[var(--muted)] mt-4 leading-relaxed" id="rationale">{activePred.rationale}</p>
             </Card>
 
             <Card title="3D cardiac model" icon={HeartPulse} id="card-heart">
-              <Heart3D patient={sel} prediction={pred} color={color} />
+              <Heart3D patient={sel} prediction={activePred} color={color} />
               <div className="grid grid-cols-3 gap-2 mt-3 text-center text-xs">
                 {[["BP", `${f.systolic_bp}`], ["Chol", `${f.cholesterol}`], ["BMI", `${f.bmi}`]].map(([k, v]) => (
                   <div key={k} className="rounded-lg bg-white/5 py-2"><div className="text-[var(--muted)]">{k}</div><div className="font-semibold text-sm">{v}</div></div>
@@ -124,7 +183,7 @@ export default function Home() {
 
             <Card title="Modality contribution" icon={Stethoscope} id="card-modality">
               <div className="space-y-3">
-                {Object.entries(pred.modality_contrib).map(([k, v]) => (
+                {Object.entries(activePred.modality_contrib).map(([k, v]) => (
                   <div key={k}>
                     <div className="flex justify-between text-sm mb-1 capitalize"><span>{k}</span><span className="font-mono text-[var(--muted)]">{(v * 100).toFixed(0)}%</span></div>
                     <div className="h-2.5 rounded-full bg-white/8 overflow-hidden">
@@ -134,20 +193,20 @@ export default function Home() {
                 ))}
               </div>
               <p className="text-[11px] text-[var(--muted)] mt-4">Share of evidence each modality adds to the fused logit.</p>
-              <div className="mt-4 text-xs text-[var(--muted)]">{!pred.ecg_findings && "No usable ECG supplied. "}{!pred.notes_entities && "No notes supplied."}</div>
+              <div className="mt-4 text-xs text-[var(--muted)]">{!activePred.ecg_findings && "No usable ECG supplied. "}{!activePred.notes_entities && "No notes supplied."}</div>
             </Card>
 
             <Card title="Explainability · SHAP" icon={Sparkles} className="lg:col-span-2" id="card-shap">
-              <ShapChart shap={pred.shap} />
+              <ShapChart shap={activePred.shap} />
             </Card>
 
             <Card title="What-if simulator" icon={SlidersHorizontal} id="card-whatif">
-              <WhatIf req={sel.request} />
+              <WhatIf req={sel.request} onSimulate={setSim} resetKey={resetKey} />
             </Card>
 
             <Card title="ECG analysis" icon={Activity} className="lg:col-span-2" id="card-ecg">
               {sel.request.ecg?.signal?.length ? (
-                <EcgViewer signal={sel.request.ecg.signal} fs={sel.request.ecg.sampling_rate} findings={pred.ecg_findings} />
+                <EcgViewer signal={sel.request.ecg.signal} fs={sel.request.ecg.sampling_rate} findings={activePred.ecg_findings} />
               ) : <p className="text-sm text-[var(--muted)]">No ECG recording for this patient.</p>}
             </Card>
 
@@ -156,9 +215,9 @@ export default function Home() {
                 <>
                   <p className="text-sm italic text-[var(--muted)] border-l-2 border-[var(--accent)] pl-3 mb-3">{sel.request.notes}</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {pred.notes_entities?.risk_flags.map((t) => <span key={t} className="px-2 py-0.5 rounded-full text-xs bg-rose-500/15 text-rose-300 border border-rose-400/30">{t}</span>)}
-                    {pred.notes_entities?.symptoms.map((t) => <span key={t} className="px-2 py-0.5 rounded-full text-xs bg-cyan-400/15 text-cyan-300 border border-cyan-400/30">{t}</span>)}
-                    {pred.notes_entities?.medications.map((t) => <span key={t} className="px-2 py-0.5 rounded-full text-xs bg-violet-400/15 text-violet-300 border border-violet-400/30">{t}</span>)}
+                    {activePred.notes_entities?.risk_flags.map((t) => <span key={t} className="px-2 py-0.5 rounded-full text-xs bg-rose-500/15 text-rose-300 border border-rose-400/30">{t}</span>)}
+                    {activePred.notes_entities?.symptoms.map((t) => <span key={t} className="px-2 py-0.5 rounded-full text-xs bg-cyan-400/15 text-cyan-300 border border-cyan-400/30">{t}</span>)}
+                    {activePred.notes_entities?.medications.map((t) => <span key={t} className="px-2 py-0.5 rounded-full text-xs bg-violet-400/15 text-violet-300 border border-violet-400/30">{t}</span>)}
                   </div>
                 </>
               ) : <p className="text-sm text-[var(--muted)]">No clinical notes for this patient.</p>}

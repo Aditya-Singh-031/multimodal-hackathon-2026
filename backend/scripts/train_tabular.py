@@ -73,8 +73,8 @@ def load_and_map_uci(csv_path: Path) -> tuple[pd.DataFrame, pd.Series, pd.Series
     df_uci["smoker"] = (smoker_prob > rng.random(len(df))).astype(int)
 
     df_uci["diabetic"] = (df["fbs"] == 1.0).astype(int)
-    df_uci["bmi"] = np.clip(rng.normal(26.8 + (df_uci["systolic_bp"] - 130) * 0.03, 3.5), 18.5, 42.0).round(1)
-    df_uci["resting_hr"] = np.clip(rng.normal(72.0, 8.0), 50.0, 100.0).round(1)
+    df_uci["bmi"] = np.clip(rng.normal(26.8 + (df_uci["systolic_bp"] - 130) * 0.03, 3.5, size=len(df)), 18.5, 42.0).round(1)
+    df_uci["resting_hr"] = np.clip(rng.normal(72.0, 8.0, size=len(df)), 50.0, 100.0).round(1)
 
     # Chest pain type monotonic mapping: 2.0=atypical(0), 3.0=non-anginal(1), 1.0=typical(2), 4.0=severe/silent ischemia(3)
     cp_map = {2.0: 0, 3.0: 1, 1.0: 2, 4.0: 3}
@@ -85,24 +85,24 @@ def load_and_map_uci(csv_path: Path) -> tuple[pd.DataFrame, pd.Series, pd.Series
     # LVH: restecg == 2.0 represents probable or definite left ventricular hypertrophy by Estes' criteria in UCI
     df_uci["lvh"] = (df["restecg"] == 2.0).astype(int)
 
-    # ST elevation: acute ischemic biomarker, elevated in positive CAD with high oldpeak or ST abnormality
-    st_elev_prob = np.clip(0.04 + 0.35 * df["target"] * (df["oldpeak"] >= 1.5) + 0.15 * (df["restecg"] == 1.0), 0.02, 0.75)
+    # ST elevation: acute ischemic biomarker (elevated in high-risk ischemic subset)
+    st_elev_prob = np.clip(0.03 + 0.25 * df["target"] * (df["oldpeak"] >= 1.5) + 0.10 * (df["restecg"] == 1.0), 0.02, 0.65)
     df_uci["st_elevation"] = (st_elev_prob > rng.random(len(df))).astype(int)
 
     # T-wave inversion: ischemic repolarization abnormality (restecg == 1 or exertional ischemia)
-    t_inv_prob = np.clip(0.06 + 0.40 * (df["restecg"] == 1.0) + 0.25 * df["target"] * (df["exang"] == 1.0), 0.04, 0.85)
+    t_inv_prob = np.clip(0.05 + 0.30 * (df["restecg"] == 1.0) + 0.20 * df["target"] * (df["exang"] == 1.0), 0.04, 0.70)
     df_uci["t_inversion"] = (t_inv_prob > rng.random(len(df))).astype(int)
 
     # RWMA: Regional Wall Motion Abnormality score (0: normal to 4: dyskinesia)
-    # Strongly correlates with ischemic burden and fluoroscopy ca count in obstructive CAD
+    # Preserved in normal patients (0) and resting stable CAD without prior infarction; elevated in extensive CAD
     ca_clean = df["ca"].fillna(0).astype(float)
-    rwma_target = df["target"] * (1 + (ca_clean >= 1).astype(int) + (ca_clean >= 2).astype(int) + (df["oldpeak"] >= 2.0).astype(int))
-    noise = rng.normal(0, 0.35, len(df))
-    df_uci["rwma"] = np.clip(np.round(rwma_target + noise), 0, 4).astype(int)
+    has_rwma = (df["target"] == 1) & ((df["oldpeak"] >= 1.5) | (ca_clean >= 2) | (rng.random(len(df)) < 0.35))
+    noise = rng.normal(0, 0.3, len(df))
+    df_uci["rwma"] = np.where(has_rwma, np.clip(np.round(1 + (ca_clean >= 1).astype(int) + (df["oldpeak"] >= 2.0).astype(int) + noise), 1, 4), 0).astype(int)
 
     # Cardiac enzymes (troponin / CK-MB elevation):
-    # Marker of myocardial injury / acute ischemia
-    enzymes_prob = np.clip(0.01 + 0.30 * df["target"] * (df["oldpeak"] >= 2.5) + 0.12 * df["target"] * (ca_clean >= 2), 0.01, 0.65)
+    # Acute myocardial necrosis biomarker
+    enzymes_prob = np.clip(0.01 + 0.20 * df["target"] * (df["oldpeak"] >= 2.5) + 0.08 * df["target"] * (ca_clean >= 2), 0.01, 0.50)
     df_uci["cardiac_enzymes_elevated"] = (enzymes_prob > rng.random(len(df))).astype(int)
 
     y = df["target"].astype(int)

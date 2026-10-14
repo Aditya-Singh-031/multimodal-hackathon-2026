@@ -5,7 +5,9 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import type { VesselId } from "@/lib/types";
+import { useFrame } from "@react-three/fiber";
+import type { VesselAssessment, VesselId, VesselStatus } from "@/lib/types";
+import { STATUS_COLOR } from "@/lib/vessels";
 
 export * from "@/lib/vessels";
 
@@ -131,4 +133,117 @@ export function PlaqueCuff({
   }, [curve, lesionU]);
 
   return <mesh ref={meshRef} geometry={geo} material={mat} renderOrder={6} />;
+}
+
+/**
+ * Coronary Blood-Flow Particle Stream:
+ * InstancedMesh of glowing hemodynamic blood cells/particles traveling along the 3D spline paths of LAD, LCx, and RCA.
+ * Particles flow smoothly in patent arteries, accelerate into a tight high-speed jet across the stenotic pinch (lesionU),
+ * and slow/dim downstream when predicted stenosis >= 50%.
+ */
+export function CoronaryFlowParticles({
+  curve,
+  a,
+  lesionU,
+  count = 32,
+  vesselRadius = 0.017,
+}: {
+  curve: THREE.Curve<THREE.Vector3>;
+  a: VesselAssessment;
+  lesionU: number | null;
+  count?: number;
+  vesselRadius?: number;
+}) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const geo = useMemo(() => new THREE.SphereGeometry(0.005, 8, 8), []);
+  const mat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: STATUS_COLOR[a.status],
+        emissive: STATUS_COLOR[a.status],
+        emissiveIntensity: 1.4,
+        roughness: 0.25,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    [a.status],
+  );
+
+  useEffect(() => () => {
+    geo.dispose();
+    mat.dispose();
+  }, [geo, mat]);
+
+  // Particle distribution parameters
+  const seeds = useMemo(() => {
+    return Array.from({ length: count }, (_, i) => ({
+      u0: i / count,
+      phaseOffset: (i * 0.137) % 1,
+      radialAngle: (i * 2.399) % (Math.PI * 2),
+      radiusFrac: 0.2 + 0.6 * ((i * 0.618) % 1),
+    }));
+  }, [count]);
+
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const normalVec = useMemo(() => new THREE.Vector3(), []);
+  const binormalVec = useMemo(() => new THREE.Vector3(), []);
+  const upRef = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+
+  useFrame(({ clock }) => {
+    if (!meshRef.current) return;
+    const t = clock.elapsedTime;
+    const hasLesion = lesionU !== null && a.stenosis >= 50;
+    const baseSpeed = 0.18 + 0.45 * (1 - a.flowReduction / 100);
+
+    for (let i = 0; i < count; i++) {
+      const s = seeds[i];
+      // Parametric progress along the 3D spline:
+      const u = (s.u0 + t * baseSpeed) % 1.0;
+      let particleScale = 1.0;
+
+      if (hasLesion) {
+        const dist = u - lesionU;
+        if (Math.abs(dist) < 0.05) {
+          // Venturi jet acceleration through stenotic constriction
+          particleScale = 0.7; // compressed jet
+        } else if (dist > 0.05) {
+          // Downstream post-stenotic sluggish flow
+          particleScale = 0.85;
+        }
+      }
+
+      const p = curve.getPointAt(u);
+      const tangent = curve.getTangentAt(u).normalize();
+
+      // Form orthogonal basis for cross-sectional particle dispersion inside the lumen
+      if (Math.abs(tangent.dot(upRef)) > 0.9) {
+        normalVec.set(1, 0, 0).cross(tangent).normalize();
+      } else {
+        normalVec.crossVectors(tangent, upRef).normalize();
+      }
+      binormalVec.crossVectors(tangent, normalVec).normalize();
+
+      // Taper particle spread at the lesion pinch site
+      let r = vesselRadius * 0.75 * s.radiusFrac;
+      if (hasLesion && Math.abs(u - lesionU) < 0.05) {
+        r *= 0.25; // compress into tight central jet stream
+      }
+
+      const cos = Math.cos(s.radialAngle);
+      const sin = Math.sin(s.radialAngle);
+      p.addScaledVector(normalVec, cos * r);
+      p.addScaledVector(binormalVec, sin * r);
+
+      dummy.position.copy(p);
+      dummy.scale.setScalar(particleScale);
+      dummy.updateMatrix();
+      meshRef.current.setMatrixAt(i, dummy.matrix);
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true;
+  });
+
+  return <instancedMesh ref={meshRef} args={[geo, mat, count]} renderOrder={7} />;
 }

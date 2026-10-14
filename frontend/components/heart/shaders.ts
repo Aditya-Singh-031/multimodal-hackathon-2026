@@ -1,10 +1,11 @@
 /**
  * Shader patches:
- *  - Myocardium: MeshStandardMaterial + onBeforeCompile injecting (a) territory-localized perfusion warning glow
- *    (distance-to-vessel-polyline falloff, pulsed with the heartbeat) and (b) an X-ray mode with Fresnel rim light
- *    and reduced opacity so the coronary tree shows through.
- *  - Coronary tubes: lightweight ShaderMaterial with animated flow pulses whose speed tracks estimated flow,
- *    and dimmed downstream perfusion past a critical lesion.
+ *  - Myocardium: MeshStandardMaterial + onBeforeCompile injecting:
+ *    (a) Territory-localized perfusion warning glow (distance-to-vessel-polyline falloff, pulsed with heartbeat)
+ *    (b) Biomechanical systolic wall motion with ischemic hypokinesia attenuation (modeling hypokinesis driven by ML predictions)
+ *    (c) X-ray mode with Fresnel rim light and translucency so the coronary tree shows through
+ *    (d) Ischemia map toggle uniform (uIschemiaMap)
+ *  - Coronary tubes: lightweight ShaderMaterial with animated flow pulses tracking flow velocity.
  */
 import * as THREE from "three";
 import { GLOW_SAMPLES } from "./anatomy";
@@ -16,6 +17,7 @@ export interface SharedPerfusionUniforms {
   uTime: THREE.IUniform<number>;
   uBeat: THREE.IUniform<number>;
   uXray: THREE.IUniform<number>;
+  uIschemiaMap: THREE.IUniform<number>;
   uPts: THREE.IUniform<THREE.Vector3[]>;
   uGlow: THREE.IUniform<THREE.Vector4[]>;
   uRadius: THREE.IUniform<number>;
@@ -26,6 +28,7 @@ export function createPerfusionUniforms(): SharedPerfusionUniforms {
     uTime: { value: 0 },
     uBeat: { value: 0 },
     uXray: { value: 0 },
+    uIschemiaMap: { value: 1 },
     uPts: { value: Array.from({ length: VESSEL_SLOTS * GLOW_SAMPLES }, () => new THREE.Vector3(99, 99, 99)) },
     uGlow: { value: Array.from({ length: VESSEL_SLOTS }, () => new THREE.Vector4(0, 0, 0, 0)) },
     uRadius: { value: 0.26 },
@@ -34,20 +37,24 @@ export function createPerfusionUniforms(): SharedPerfusionUniforms {
 
 const SEGS = GLOW_SAMPLES - 1;
 
-const FRAG_HEADER = /* glsl */ `
+const COMMON_HEADER = /* glsl */ `
 uniform float uTime;
 uniform float uBeat;
 uniform float uXray;
+uniform float uIschemiaMap;
 uniform vec3 uPts[${VESSEL_SLOTS * GLOW_SAMPLES}];
 uniform vec4 uGlow[${VESSEL_SLOTS}];
 uniform float uRadius;
-varying vec3 vNormPos;
 
 float cfSegDist(vec3 p, vec3 a, vec3 b) {
   vec3 pa = p - a, ba = b - a;
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
   return length(pa - ba * h);
 }
+`;
+
+const FRAG_HEADER = /* glsl */ `
+varying vec3 vNormPos;
 
 vec3 cfPerfusionDeficit(out float maxStrength) {
   vec3 deficitAcc = vec3(0.0);
@@ -60,7 +67,7 @@ vec3 cfPerfusionDeficit(out float maxStrength) {
       d = min(d, cfSegDist(vNormPos, uPts[v * ${GLOW_SAMPLES} + i], uPts[v * ${GLOW_SAMPLES} + i + 1]));
     }
     // Perfusion territory coverage around the coronary tree
-    float s = exp(-pow(d / uRadius, 2.0)) * g.a;
+    float s = exp(-pow(d / uRadius, 2.0)) * g.a * uIschemiaMap;
     if (s <= 0.001) continue;
     
     // Hypoxic pulse: sluggish, out-of-phase ischemic rhythm
@@ -84,10 +91,32 @@ export function patchMyocardium(
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, shared, { uToNorm: { value: toNorm } });
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nuniform mat4 uToNorm;\nvarying vec3 vNormPos;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvNormPos = (uToNorm * vec4(transformed, 1.0)).xyz;");
+      .replace("#include <common>", `#include <common>\nuniform mat4 uToNorm;\n${COMMON_HEADER}\nvarying vec3 vNormPos;`)
+      .replace(
+        "#include <begin_vertex>",
+        /* glsl */ `#include <begin_vertex>
+        vNormPos = (uToNorm * vec4(transformed, 1.0)).xyz;
+        
+        // Biomechanical Systolic Wall Motion with Ischemic Hypokinesia Attenuation:
+        // Territories supplied by vessels with stenosis >= 50% (uGlow.a > 0.4) contract significantly less,
+        // faithfully modeling regional hypokinesia / akinesia driven strictly by multi-target ML predictions.
+        float ischemicHypokinesia = 0.0;
+        for (int v = 0; v < ${VESSEL_SLOTS}; v++) {
+          if (uGlow[v].a > 0.40) {
+            float d = 1e3;
+            for (int i = 0; i < ${SEGS}; i++) {
+              d = min(d, cfSegDist(vNormPos, uPts[v * ${GLOW_SAMPLES} + i], uPts[v * ${GLOW_SAMPLES} + i + 1]));
+            }
+            float s = exp(-pow(d / uRadius, 2.0));
+            ischemicHypokinesia = max(ischemicHypokinesia, s * uGlow[v].a);
+          }
+        }
+        float systolicContraction = uBeat * (0.045 * (1.0 - 0.85 * clamp(ischemicHypokinesia, 0.0, 1.0)));
+        transformed -= normal * systolicContraction;
+        `,
+      );
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", `#include <common>\n${FRAG_HEADER}`)
+      .replace("#include <common>", `#include <common>\n${COMMON_HEADER}\n${FRAG_HEADER}`)
       .replace(
         "#include <emissivemap_fragment>",
         /* glsl */ `#include <emissivemap_fragment>
@@ -113,7 +142,7 @@ export function patchMyocardium(
         }`,
       );
   };
-  mat.customProgramCacheKey = () => "cardiofusion-perfusion-v2";
+  mat.customProgramCacheKey = () => "cardiofusion-perfusion-v3";
   mat.needsUpdate = true;
 }
 

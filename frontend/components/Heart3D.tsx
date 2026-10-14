@@ -79,7 +79,27 @@ export default function Heart3D({
   const [nonce, setNonce] = useState(0);
   const [selected, setSelected] = useState<VesselId | null>(null);
   const [xray, setXray] = useState(false);
+  const [flowParticles, setFlowParticles] = useState(true);
+  const [ischemiaMap, setIschemiaMap] = useState(true);
   const [ready, setReady] = useState(false);
+
+  const isCadPositive = prediction?.cad_status ?? (risk >= 0.50 || assessments.some((a) => a.id !== "LM" && a.stenosis >= 50));
+  const targetVessels = useMemo(() => {
+    return [
+      { id: "LAD", name: "LAD (Anterior)" },
+      { id: "LCx", name: "LCX (Lateral)" },
+      { id: "RCA", name: "RCA (Inferior)" },
+    ].map((item) => {
+      const a = assessments.find((x) => x.id === item.id);
+      return {
+        id: item.id as VesselId,
+        name: item.name,
+        stenosis: a?.stenosis ?? 0,
+        status: a?.status ?? "patent",
+        color: STATUS_COLOR[a?.status ?? "patent"],
+      };
+    });
+  }, [assessments]);
 
   // Patient (or culprit) change → cinematic auto-focus on the most severe lesion, close any open inspection.
   const sceneKey = `${patient.id}:${culpritId ?? "none"}`;
@@ -118,13 +138,66 @@ export default function Heart3D({
 
   return (
     <div className="flex flex-col gap-3" id="heart-3d-container" data-view={view} data-bpm={bpm} data-hz={hz.toFixed(3)} data-xray={xray}>
+      {/* Top Clinical HUD Banner: Overall CAD Status + 3 Target Vessels Summary + Methodological Footnote */}
+      <div className="rounded-xl border border-white/10 bg-black/50 backdrop-blur-md p-3 space-y-2 shadow-xl" id="heart-clinical-banner">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* 1. Overall CAD Status */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-white/50">Overall CAD:</span>
+            <div
+              id="cad-status-badge"
+              className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition-all ${
+                isCadPositive
+                  ? "bg-rose-500/20 border-rose-400/50 text-rose-200 shadow-[0_0_16px_rgba(244,63,94,0.3)] animate-pulse"
+                  : "bg-emerald-500/20 border-emerald-400/50 text-emerald-200 shadow-[0_0_16px_rgba(52,211,153,0.2)]"
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${isCadPositive ? "bg-rose-400 shadow-[0_0_8px_#f43f5e]" : "bg-emerald-400 shadow-[0_0_8px_#34d399]"}`} />
+              <span>{isCadPositive ? "POSITIVE (CAD ≥ 50% Stenosis)" : "NEGATIVE (No Obstructive CAD)"}</span>
+              <span className="font-mono text-[11px] opacity-80 border-l border-current/30 pl-2">
+                P(CAD): {(risk * 100).toFixed(0)}%
+              </span>
+            </div>
+          </div>
+
+          {/* 2. 3 Target Vessels Summary */}
+          <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap" id="target-vessels-summary">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 hidden xl:inline">Target Vessels:</span>
+            {targetVessels.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => inspect(v.id)}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-all text-[11px]"
+                title={`Click to inspect ${v.name}`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: v.color }} />
+                <span className="text-white/70 font-medium">{v.id}</span>
+                <div className="w-10 sm:w-14 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${v.stenosis}%`, background: v.color }} />
+                </div>
+                <span className="font-mono font-bold text-[10px]" style={{ color: v.color }}>{v.stenosis}%</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Methodological footnote badge */}
+        <div className="flex items-center gap-1.5 text-[10px] text-white/50 bg-white/[0.02] border border-white/[0.04] px-2.5 py-1 rounded-lg" id="methodology-footnote-badge">
+          <span className="text-cyan-400 font-bold shrink-0">ℹ</span>
+          <span className="leading-tight">
+            <strong className="text-white/70 font-medium">Methodological Guardrail:</strong> 3D vessel narrowing &amp; perfusion deficits are projected from multi-target ML predictions (CAD, LAD, LCX, RCA); clinical &amp; echo inputs (incl. RWMA) act strictly as model features.
+          </span>
+        </div>
+      </div>
+
       <div
         ref={stageRef}
         className="relative w-full h-[380px] sm:h-[440px] lg:h-[500px] rounded-xl overflow-hidden border border-white/[0.07] heart-stage"
         id="heart-3d"
         aria-label="Interactive 3D heart with coronary artery risk mapping"
       >
-        {/* Floating camera toolbar */}
+        {/* Floating camera & visualization toggles toolbar */}
         <div className="absolute top-2.5 inset-x-2.5 z-30 flex items-start justify-between gap-2 pointer-events-none">
           <div role="toolbar" aria-label="Camera views" className="pointer-events-auto flex gap-1 p-1 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 overflow-x-auto max-w-full no-scrollbar shadow-lg">
             {TOOLBAR.map(({ view: v, text }) => {
@@ -145,15 +218,38 @@ export default function Heart3D({
               );
             })}
           </div>
-          <button
-            id="xray-toggle"
-            type="button"
-            aria-pressed={xray}
-            onClick={() => setXray((x) => !x)}
-            className={`pointer-events-auto shrink-0 flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-semibold border backdrop-blur-md transition-all ${xray ? "bg-cyan-500/25 border-cyan-300 text-cyan-200 shadow-[0_0_18px_rgba(34,211,238,0.4)]" : "bg-black/60 border-white/10 text-white/70 hover:text-white hover:bg-white/10 shadow-lg"}`}
-          >
-            <ScanLine size={13} /> X-Ray Mode
-          </button>
+
+          <div className="flex items-center gap-1.5 pointer-events-auto">
+            <button
+              id="flow-particles-toggle"
+              type="button"
+              aria-pressed={flowParticles}
+              onClick={() => setFlowParticles((p) => !p)}
+              className={`shrink-0 flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-semibold border backdrop-blur-md transition-all ${flowParticles ? "bg-cyan-500/25 border-cyan-300 text-cyan-200 shadow-[0_0_14px_rgba(34,211,238,0.35)]" : "bg-black/60 border-white/10 text-white/50 hover:text-white hover:bg-white/10 shadow-lg"}`}
+              title="Toggle hemodynamic blood-cell particle streams"
+            >
+              <Droplets size={12} /> <span className="hidden sm:inline">Flow Particles</span>
+            </button>
+            <button
+              id="ischemia-map-toggle"
+              type="button"
+              aria-pressed={ischemiaMap}
+              onClick={() => setIschemiaMap((m) => !m)}
+              className={`shrink-0 flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-semibold border backdrop-blur-md transition-all ${ischemiaMap ? "bg-rose-500/25 border-rose-300 text-rose-200 shadow-[0_0_14px_rgba(244,63,94,0.35)]" : "bg-black/60 border-white/10 text-white/50 hover:text-white hover:bg-white/10 shadow-lg"}`}
+              title="Toggle myocardial ischemic perfusion map"
+            >
+              <Layers size={12} /> <span className="hidden sm:inline">Ischemia Map</span>
+            </button>
+            <button
+              id="xray-toggle"
+              type="button"
+              aria-pressed={xray}
+              onClick={() => setXray((x) => !x)}
+              className={`shrink-0 flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-semibold border backdrop-blur-md transition-all ${xray ? "bg-cyan-500/25 border-cyan-300 text-cyan-200 shadow-[0_0_18px_rgba(34,211,238,0.4)]" : "bg-black/60 border-white/10 text-white/70 hover:text-white hover:bg-white/10 shadow-lg"}`}
+            >
+              <ScanLine size={13} /> <span className="hidden sm:inline">X-Ray Mode</span>
+            </button>
+          </div>
         </div>
 
         <Canvas
@@ -163,7 +259,20 @@ export default function Heart3D({
           fallback={<div className="absolute inset-0 grid place-items-center text-sm text-white/60">WebGL unavailable — vessel summary shown below.</div>}
           className="!absolute inset-0"
         >
-          <HeartScene portal={stageRef as unknown as React.RefObject<HTMLElement>} assessments={assessments} bpm={bpm} tint={color} xray={xray} view={view} viewNonce={nonce} highlight={highlight} onSelect={inspect} onAnatomyReady={onReady} />
+          <HeartScene
+            portal={stageRef as unknown as React.RefObject<HTMLElement>}
+            assessments={assessments}
+            bpm={bpm}
+            tint={color}
+            xray={xray}
+            flowParticles={flowParticles}
+            ischemiaMap={ischemiaMap}
+            view={view}
+            viewNonce={nonce}
+            highlight={highlight}
+            onSelect={inspect}
+            onAnatomyReady={onReady}
+          />
         </Canvas>
 
         {/* Live vitals HUD */}
